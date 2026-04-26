@@ -1,0 +1,30 @@
+# ================================================================
+# servo_params.yaml
+# [C++ 담당] pan_tilt_controller + lid_controller 서보 파라미터
+#
+# [하드웨어 구성]
+#   servo_id 0: Pan (좌우) — MG996R + 메탈 브라켓
+#   servo_id 1: Tilt (상하) — MG996R
+#   servo_id 2: 바구니 뚜껑 — MG996R
+#   제어 보드: OpenCR GPIO (PWM)
+#
+# ※ 이 구성은 변경될 수 있음
+# ================================================================
+
+pan_tilt_controller:
+  ros__parameters:
+    # Pan (좌우 회전)
+    pan_center: 90.0       # 중립 각도 (정면)
+    pan_min: 0.0           # 최소 각도
+    pan_max: 180.0         # 최대 각도
+    pan_kp: 0.1            # 비례 게인
+
+    # Tilt (상하 회전)
+    tilt_center: 90.0
+    tilt_min: 45.0         # 너무 위로 안 올라가게
+    tilt_max: 135.0        # 너무 아래로 안 내려가게
+    tilt_kp: 0.08
+
+    # 카메라 해상도 (bbox 중심 계산용)
+    image_width: 640
+    image_height: 480

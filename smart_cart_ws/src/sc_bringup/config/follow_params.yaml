@@ -1,0 +1,35 @@
+# ================================================================
+# follow_params.yaml
+# [C++ 담당] follow_controller 파라미터
+# ros2 param set 또는 rqt_reconfigure로 실시간 변경 가능
+# ================================================================
+
+follow_controller:
+  ros__parameters:
+    # PID - Linear (전진/후진)
+    linear_kp: 0.002
+    linear_ki: 0.0
+    linear_kd: 0.0005
+
+    # PID - Angular (좌/우 회전)
+    angular_kp: 0.004
+    angular_ki: 0.0
+    angular_kd: 0.001
+
+    # 목표 bbox 높이 (이 픽셀 높이일 때 사람과의 거리가 적절하다고 판단)
+    # 값 크게 → 사람에 더 가까이 붙음
+    # 값 작게 → 사람에서 더 멀리 떨어짐
+    target_bbox_height: 300.0
+
+    # 카메라 해상도
+    image_width: 640
+
+    # 속도 제한
+    max_linear_vel: 0.22     # TurtleBot3 Waffle Pi 최대 0.26 m/s
+    max_angular_vel: 1.0     # rad/s
+
+    # 사람 bbox 수신 없으면 이 시간 후 정지 (초)
+    bbox_timeout_sec: 1.5
+
+    # 제어 루프 주기
+    control_freq_hz: 20.0

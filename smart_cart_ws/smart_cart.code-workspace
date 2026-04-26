@@ -1,0 +1,45 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.compilerPath": "/usr/bin/g++",
+    "C_Cpp.default.includePath": [
+      "${workspaceFolder}/src/sc_cpp/include",
+      "${workspaceFolder}/install/sc_interfaces/include",
+      "/opt/ros/humble/include/**"
+    ],
+    "python.defaultInterpreterPath": "/usr/bin/python3",
+    "python.analysis.extraPaths": [
+      "/opt/ros/humble/lib/python3.10/site-packages",
+      "${workspaceFolder}/install/sc_interfaces/lib/python3.10/site-packages",
+      "${workspaceFolder}/install/sc_python/lib/python3.10/site-packages"
+    ],
+    "files.associations": {
+      "*.msg": "plaintext",
+      "*.srv": "plaintext",
+      "*.action": "plaintext",
+      "CMakeLists.txt": "cmake",
+      "*.launch.py": "python",
+      "*.ino": "cpp"
+    },
+    "cmake.configureOnOpen": false,
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "[cpp]": { "editor.tabSize": 2 },
+    "[python]": { "editor.tabSize": 4 },
+    "terminal.integrated.env.linux": {
+      "TURTLEBOT3_MODEL": "waffle_pi"
+    },
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+      "CMakeLists.txt": "package.xml",
+      "setup.py": "setup.cfg, package.xml",
+      "platformio.ini": "*.ino, *.cpp, *.h"
+    }
+  }
+}

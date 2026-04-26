@@ -1,0 +1,25 @@
+# ================================================================
+# lid_params.yaml
+# [C++ 담당] lid_controller 바구니 뚜껑 파라미터
+#
+# 동작 시나리오:
+#   1. RPi 카메라가 Roboflow 학습 물체 인식 → /item_detected
+#   2. lid_controller가 연속 N프레임 확정
+#   3. 뚜껑 열기 (servo_id=2 → open_angle)
+#   4. open_duration_sec 후 자동 닫기 (close_angle)
+#
+# ※ 결제 시스템 연동:
+#   현재 계획: 안드로이드 앱에서 상품 QR 스캔 → 결제 (별도 프로젝트)
+#   추후 ROS2 연동 시 이 config에 결제 확인 토픽 추가 가능
+# ================================================================
+
+lid_controller:
+  ros__parameters:
+    # 물체 인식 확정 기준
+    confidence_threshold: 0.70   # Roboflow 모델 신뢰도 임계값
+    confirm_frames: 5            # 연속 N프레임 이상 감지 시 확정
+
+    # 뚜껑 서보 각도 (MG996R, servo_id=2)
+    open_angle: 120.0            # 뚜껑 열림 각도
+    close_angle: 0.0             # 뚜껑 닫힘 각도
+    open_duration_sec: 5.0       # 열린 후 자동 닫기까지 대기 시간

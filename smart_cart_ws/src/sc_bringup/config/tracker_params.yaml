@@ -1,0 +1,13 @@
+# ================================================================
+# tracker_params.yaml
+# [Python 담당] person_tracker 파라미터
+# ================================================================
+
+person_tracker:
+  ros__parameters:
+    model_path: "yolov8n.pt"
+    confidence: 0.5
+    target_track_id: -1          # -1 = 첫 감지 사람 자동 고정
+    image_topic: "/webcam/image_raw"
+    device: "cpu"                # RPi4는 CPU only
+    show_debug: false

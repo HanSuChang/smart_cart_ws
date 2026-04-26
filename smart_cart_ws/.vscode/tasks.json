@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Build: sc_interfaces (반드시 먼저)",
+      "type": "shell",
+      "command": "source /opt/ros/humble/setup.bash && colcon build --packages-select sc_interfaces && source install/setup.bash",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "2. Build: sc_cpp",
+      "type": "shell",
+      "command": "source /opt/ros/humble/setup.bash && source install/setup.bash && colcon build --packages-select sc_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "3. Build: sc_python",
+      "type": "shell",
+      "command": "source /opt/ros/humble/setup.bash && source install/setup.bash && colcon build --packages-select sc_python",
+      "group": "build",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "4. Build: ALL",
+      "type": "shell",
+      "command": "source /opt/ros/humble/setup.bash && colcon build --packages-select sc_interfaces && source install/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && source install/setup.bash",
+      "group": { "kind": "build", "isDefault": true },
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "Run: Real Robot",
+      "type": "shell",
+      "command": "source /opt/ros/humble/setup.bash && source install/setup.bash && export TURTLEBOT3_MODEL=waffle_pi && ros2 launch sc_bringup robot.launch.py",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "Run: Gazebo Simulation",
+      "type": "shell",
+      "command": "source /opt/ros/humble/setup.bash && source install/setup.bash && export TURTLEBOT3_MODEL=waffle_pi && ros2 launch sc_bringup sim.launch.py",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "Clean: build/install/log",
+      "type": "shell",
+      "command": "rm -rf build/ install/ log/",
+      "options": { "cwd": "${workspaceFolder}" }
+    }
+  ]
+}

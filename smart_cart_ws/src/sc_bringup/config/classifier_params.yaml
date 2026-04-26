@@ -1,0 +1,21 @@
+# ================================================================
+# classifier_params.yaml
+# [Python 담당] item_classifier 파라미터
+# ================================================================
+
+item_classifier:
+  ros__parameters:
+    # Roboflow에서 학습 → YOLOv8n export한 .pt 파일 경로
+    model_path: "best.pt"        # models/ 폴더에 배치
+    confidence: 0.6
+    image_topic: "/rpi_camera/image_raw"
+
+    # 바구니 입구 ROI 영역 (화면 비율 0.0~1.0)
+    roi_x: 0.1
+    roi_y: 0.1
+    roi_w: 0.8
+    roi_h: 0.5
+
+    # 배경 차분 모션 감지 임계값 (픽셀 수)
+    motion_threshold: 500
+    show_debug: false

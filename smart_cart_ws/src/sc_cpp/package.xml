@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <n>sc_cpp</n>
+  <version>0.1.0</version>
+  <description>
+    Smart Cart C++ 제어 노드 패키지.
+    follow_controller: 사람 추종 PID + Kalman
+    safety_monitor: LiDAR 장애물 긴급정지
+    lid_controller: 바구니 뚜껑 서보 제어
+    pan_tilt_controller: 웹캠 Pan/Tilt 서보 제어
+    status_publisher: 전체 상태 종합 발행
+  </description>
+  <maintainer email="hsc07240@gmail.com">한수창</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>sc_interfaces</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

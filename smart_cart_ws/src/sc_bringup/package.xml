@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <n>sc_bringup</n>
+  <version>0.1.0</version>
+  <description>Smart Cart launch/config/rviz/urdf/worlds 패키지</description>
+  <maintainer email="team@smartcart.local">SmartCart Team</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>sc_interfaces</exec_depend>
+  <exec_depend>sc_cpp</exec_depend>
+  <exec_depend>sc_python</exec_depend>
+  <exec_depend>sc_gui</exec_depend>
+
+  <exec_depend>turtlebot3_bringup</exec_depend>
+  <exec_depend>turtlebot3_gazebo</exec_depend>
+  <exec_depend>v4l2_camera</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,11 @@
+# ================================================================
+# webcam_params.yaml
+# USB 웹캠 (v4l2_camera) 설정 — 사람 추종용
+# ================================================================
+
+webcam:
+  ros__parameters:
+    video_device: "/dev/video0"
+    image_size: [640, 480]
+    pixel_format: "YUYV"
+    camera_frame_id: "webcam_link"

@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "ms-vscode.cpptools",
+    "ms-vscode.cpptools-extension-pack",
+    "ms-python.python",
+    "twxs.cmake",
+    "ms-vscode.cmake-tools",
+    "redhat.vscode-yaml",
+    "ms-iot.vscode-ros",
+    "platformio.platformio-ide",
+    "eamodio.gitlens",
+    "mhutchie.git-graph"
+  ]
+}
