@@ -69,9 +69,10 @@ ObstacleAvoidance::ObstacleAvoidance(const rclcpp::NodeOptions & options)
     std::bind(&ObstacleAvoidance::onParamChange, this, std::placeholders::_1));
 
   // ── Subscriber ──
-  scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-    "/scan", 10,
-    std::bind(&ObstacleAvoidance::scanCallback, this, std::placeholders::_1));
+  auto qos = rclcpp::QoS(rclcpp::SensorDataQoS());
+scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
+  "/scan", qos,
+  std::bind(&ObstacleAvoidance::scanCallback, this, std::placeholders::_1));
 
   odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
     "/odom", 10,
