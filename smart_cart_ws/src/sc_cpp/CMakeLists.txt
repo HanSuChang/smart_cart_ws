@@ -5,14 +5,13 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -O2)
 endif()
 
-# ── 의존성 ──
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)  # 추가됨
+find_package(nav_msgs REQUIRED)
 find_package(sc_interfaces REQUIRED)
 
 set(DEPS
@@ -21,13 +20,11 @@ set(DEPS
   geometry_msgs
   sensor_msgs
   std_msgs
-  nav_msgs       # 추가됨
+  nav_msgs
   sc_interfaces
 )
 
-# ══════════════════════════════════════════════════════
-#  KalmanFilter (공유 정적 라이브러리)
-# ══════════════════════════════════════════════════════
+# KalmanFilter
 add_library(kalman_filter STATIC
   src/kalman_filter.cpp
 )
@@ -36,9 +33,7 @@ target_include_directories(kalman_filter PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-# ══════════════════════════════════════════════════════
-#  FollowController — 사람 추종 PID 제어
-# ══════════════════════════════════════════════════════
+# FollowController
 add_library(follow_controller_component SHARED
   src/follow_controller.cpp
 )
@@ -53,9 +48,7 @@ rclcpp_components_register_node(follow_controller_component
   EXECUTABLE follow_controller
 )
 
-# ══════════════════════════════════════════════════════
-#  SafetyMonitor — LiDAR 장애물 감지 + 긴급정지
-# ══════════════════════════════════════════════════════
+# SafetyMonitor
 add_library(safety_monitor_component SHARED
   src/safety_monitor.cpp
 )
@@ -69,9 +62,7 @@ rclcpp_components_register_node(safety_monitor_component
   EXECUTABLE safety_monitor
 )
 
-# ══════════════════════════════════════════════════════
-#  LidController — 바구니 뚜껑 서보 제어
-# ══════════════════════════════════════════════════════
+# LidController
 add_library(lid_controller_component SHARED
   src/lid_controller.cpp
 )
@@ -85,9 +76,7 @@ rclcpp_components_register_node(lid_controller_component
   EXECUTABLE lid_controller
 )
 
-# ══════════════════════════════════════════════════════
-#  PanTiltController — 웹캠 서보(Pan/Tilt) 제어
-# ══════════════════════════════════════════════════════
+# PanTiltController
 add_library(pan_tilt_controller_component SHARED
   src/pan_tilt_controller.cpp
 )
@@ -101,9 +90,7 @@ rclcpp_components_register_node(pan_tilt_controller_component
   EXECUTABLE pan_tilt_controller
 )
 
-# ══════════════════════════════════════════════════════
-#  StatusPublisher — CartStatus 종합 상태 발행
-# ══════════════════════════════════════════════════════
+# StatusPublisher
 add_library(status_publisher_component SHARED
   src/status_publisher.cpp
 )
@@ -117,11 +104,19 @@ rclcpp_components_register_node(status_publisher_component
   EXECUTABLE status_publisher
 )
 
-# ══════════════════════════════════════════════════════
-#  ObstacleAvoidance — 'ㄷ'자 장애물 회피 (요청하신 추가 항목)
-# ══════════════════════════════════════════════════════
-add_executable(obstacle_avoidance src/obstacle_avoidance.cpp)
-ament_target_dependencies(obstacle_avoidance ${DEPS})
+# ObstacleAvoidance
+add_library(obstacle_avoidance_component SHARED
+  src/obstacle_avoidance.cpp
+)
+target_include_directories(obstacle_avoidance_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(obstacle_avoidance_component ${DEPS})
+rclcpp_components_register_node(obstacle_avoidance_component
+  PLUGIN "sc_cpp::ObstacleAvoidance"
+  EXECUTABLE obstacle_avoidance
+)
 
 # ── Install ──
 install(TARGETS
@@ -131,7 +126,7 @@ install(TARGETS
   lid_controller_component
   pan_tilt_controller_component
   status_publisher_component
-  obstacle_avoidance    # 설치 목록에 추가됨
+  obstacle_avoidance_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

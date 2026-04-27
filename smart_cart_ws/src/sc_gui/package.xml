@@ -1,18 +1,12 @@
 <?xml version="1.0"?>
-<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <n>sc_gui</n>
+  <name>sc_gui</name>
   <version>0.1.0</version>
-  <description>
-    Smart Cart GUI 노드 패키지.
-    /cart_status를 subscribe하여 카트 상태를 실시간 표시.
-    PyQt5 또는 rqt 플러그인 등 GUI 프레임워크는 GUI 담당 팀원이 결정.
-  </description>
-  <maintainer email="team@smartcart.local">SmartCart Team (GUI 담당)</maintainer>
+  <description>Smart Cart GUI 노드</description>
+  <maintainer email="team@smartcart.local">SmartCart Team</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
-
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>sc_interfaces</depend>
