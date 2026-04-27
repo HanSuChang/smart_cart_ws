@@ -51,26 +51,28 @@ FollowController::FollowController(const rclcpp::NodeOptions & options)
 // 기능 자체가 없을 때는 VS CODE 들어와서  원하는 declare_parameter 추가
 
 //===============================================================================================================================
-  this->declare_parameter("linear_kp", 0.002); // PID 할 때 P - p
-  this->declare_parameter("linear_ki", 0.0);   // PID 할 때 I - i
+  this->declare_parameter("linear_kp", 0.0025); // PID 할 때 P - p (살짝 상향)
+  this->declare_parameter("linear_ki", 0.0);    // PID 할 때 I - i
   this->declare_parameter("linear_kd", 0.0005); // PID 할 때 D -d
 
-  this->declare_parameter("angular_kp", 0.004); // PID 할 때 P - p
-  this->declare_parameter("angular_ki", 0.0);   // PID 할 때 I - i
+  this->declare_parameter("angular_kp", 0.005); // PID 할 때 P - p (살짝 상향)
+  this->declare_parameter("angular_ki", 0.0);    // PID 할 때 I - i
   this->declare_parameter("angular_kd", 0.001); // PID 할 때 D -d
 
-  this->declare_parameter("target_bbox_height", 300.0); // 로봇과 사람 사이의 거리 기준값
+  this->declare_parameter("target_bbox_height", 280.0); // 기준값 (조금 더 가까이 붙도록 수정)
   this->declare_parameter("image_width", 640); // 카메라의 가로 해상도
 
-  this->declare_parameter("max_linear_vel", 0.22); // 최대 속도 제한 너무 빠르게 달려 사람과 충돌하거나 급회전하여 넘어지는 것을 방지하는 안전장치
+  this->declare_parameter("max_linear_vel", 0.22); // 최대 속도 제한
   this->declare_parameter("max_angular_vel", 1.0); // 최대 속도 제한
 
   this->declare_parameter("bbox_timeout_sec", 1.5); // 사람 인식 실패 시 대기 시간
-  this->declare_parameter("control_freq_hz", 20.0); // 제어 루프 주기입니다. 초당 20번(20Hz)씩 현재 위치를 확인하고 속도 명령을 계산하라는 뜻
+  this->declare_parameter("control_freq_hz", 20.0); // 제어 루프 주기
 
+  this->declare_parameter("min_safe_dist", 0.25);  // ★ 신규: 로봇이 직접 판단할 최소 안전 거리 (25cm)
 
+  this->declare_parameter("prediction_timeout_sec", 0.8);  // ★ 신규: Kalman 예측만으로 추격 유지할 최대 시간 (사각지대 대응)
 
-  // declare_parameter로 등록했던 파라미터들의 실제 값을 가져와서 C++ 변수에 할당하는 과정
+  // 값 가져오기
   linear_kp_ = this->get_parameter("linear_kp").as_double();
   linear_ki_ = this->get_parameter("linear_ki").as_double();
   linear_kd_ = this->get_parameter("linear_kd").as_double();
@@ -83,14 +85,16 @@ FollowController::FollowController(const rclcpp::NodeOptions & options)
   max_angular_vel_ = this->get_parameter("max_angular_vel").as_double();
   bbox_timeout_sec_ = this->get_parameter("bbox_timeout_sec").as_double();
   control_freq_hz_ = this->get_parameter("control_freq_hz").as_double();
-
+  min_safe_dist_ = this->get_parameter("min_safe_dist").as_double();
+  prediction_timeout_sec_ = this->get_parameter("prediction_timeout_sec").as_double();
 
   // ── 구독 및 발행 설정 ──
   bbox_sub_ = this->create_subscription<sc_interfaces::msg::PersonBbox>(
     "/person_bbox", 10, std::bind(&FollowController::bbox_callback, this, std::placeholders::_1));
   
-  safety_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/safety_stop", 10, std::bind(&FollowController::safety_callback, this, std::placeholders::_1));
+  // ★ 개조 포인트: 외부 /safety_stop 대신 직접 LiDAR 데이터를 읽어 스스로 판단합니다.
+  scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    "/scan", rclcpp::SensorDataQoS(), std::bind(&FollowController::scan_callback, this, std::placeholders::_1));
 
   cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
@@ -99,52 +103,84 @@ FollowController::FollowController(const rclcpp::NodeOptions & options)
   timer_ = this->create_wall_timer(period, std::bind(&FollowController::control_loop, this));
 
   last_bbox_time_ = this->now();
-  RCLCPP_INFO(this->get_logger(), "FollowController가 성공적으로 시작되었습니다.");
+  RCLCPP_INFO(this->get_logger(), "FollowController(통합 버전: PID + Kalman 예측)가 성공적으로 시작되었습니다.");
+}
+
+void FollowController::scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+{
+  // 정면 ±15도 범위만 직접 감시하여 진짜 위험할 때만 브레이크를 겁니다.
+  float min_range = 3.5;
+  for (int i = 0; i < 15; i++) {
+    if (msg->ranges[i] > 0.1) min_range = std::min(min_range, msg->ranges[i]);
+    if (msg->ranges[359-i] > 0.1) min_range = std::min(min_range, msg->ranges[359-i]);
+  }
+  is_internal_safety_stop_ = (min_range < min_safe_dist_);
 }
 
 void FollowController::bbox_callback(const sc_interfaces::msg::PersonBbox::SharedPtr msg)
 {
-  last_bbox_ = msg;
-  last_bbox_time_ = this->now();
-}
+  if (msg->width > 0) {
+    // ★ Kalman 필터에 측정값 입력 (보정 단계) - person_follower의 핵심 기능
+    kf_.predict();
+    kf_.update(msg->x, msg->y, msg->width, msg->height);
 
-void FollowController::safety_callback(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  is_safety_stop_ = msg->data;
+    last_bbox_ = msg;
+    last_bbox_time_ = this->now();
+    target_lost_ = false;
+  }
 }
 
 void FollowController::control_loop()
 {
   geometry_msgs::msg::Twist cmd_vel;
 
-  // 1. 긴급 정지 상태 체크
-  if (is_safety_stop_) {
+  // 1. 데이터 유효성 및 타임아웃 체크
+  auto now = this->now();
+  double elapsed_since_bbox = (now - last_bbox_time_).seconds();
+
+  // 한 번도 사람을 본 적 없으면 정지
+  if (!last_bbox_) {
     stop_robot();
     return;
   }
 
-  // 2. 데이터 유효성 및 타임아웃 체크
-  auto now = this->now();
-  if (!last_bbox_ || (now - last_bbox_time_).seconds() > bbox_timeout_sec_) {
+  // ★ 너무 오래 안 보이면 완전 분실 → 정지
+  if (elapsed_since_bbox > bbox_timeout_sec_) {
+    target_lost_ = true;
     stop_robot();
     return;
   }
+
+  // ★ 잠깐 안 보이는 사각지대 상황 → Kalman 예측만으로 추격 유지
+  bool using_prediction = (elapsed_since_bbox > prediction_timeout_sec_);
+  if (using_prediction) {
+    kf_.predict();  // 보정 없이 예측만 계속 (사람이 가려졌을 때)
+  }
+
+  // ★ Kalman으로 보정/예측된 좌표 사용
+  auto state = kf_.getState();  // [x, y, w, h]
+  double pred_x = state[0];
+  double pred_w = state[2];
+  double pred_h = state[3];
 
   double dt = 1.0 / control_freq_hz_;
 
-  // 3. Linear 제어 (전진/후진)
-  // 에러 = 목표 높이 - 현재 높이 (높이가 작을수록 멀리 있는 것)
-  double lin_error = target_bbox_height_ - static_cast<double>(last_bbox_->height);
-  lin_error_integral_ += lin_error * dt;
-  double lin_derivative = (lin_error - lin_error_prev_) / dt;
+  // 2. Linear 제어 (전진/후진) - 안전 거리 체크 포함
+  double lin_error = target_bbox_height_ - pred_h;
   
-  double v = (linear_kp_ * lin_error) + (linear_ki_ * lin_error_integral_) + (linear_kd_ * lin_derivative);
-  cmd_vel.linear.x = std::clamp(v, -max_linear_vel_, max_linear_vel_);
+  // ★ 외부 간섭 없이 스스로 판단: 진짜 부딪힐 것 같지 않으면 전진!
+  if (!is_internal_safety_stop_) {
+    lin_error_integral_ += lin_error * dt;
+    double lin_derivative = (lin_error - lin_error_prev_) / dt;
+    double v = (linear_kp_ * lin_error) + (linear_ki_ * lin_error_integral_) + (linear_kd_ * lin_derivative);
+    cmd_vel.linear.x = std::clamp(v, -max_linear_vel_, max_linear_vel_);
+  } else {
+    cmd_vel.linear.x = 0.0; // 최소 안전 거리 확보 시 정지
+  }
   lin_error_prev_ = lin_error;
 
-  // 4. Angular 제어 (좌/우 회전)
-  // 에러 = 이미지 중앙 x - bbox 중앙 x
-  double bbox_center_x = last_bbox_->x + (last_bbox_->width / 2.0);
+  // 3. Angular 제어 (좌/우 회전)
+  double bbox_center_x = pred_x + (pred_w / 2.0);
   double ang_error = (image_width_ / 2.0) - bbox_center_x;
   ang_error_integral_ += ang_error * dt;
   double ang_derivative = (ang_error - ang_error_prev_) / dt;
@@ -153,7 +189,7 @@ void FollowController::control_loop()
   cmd_vel.angular.z = std::clamp(w, -max_angular_vel_, max_angular_vel_);
   ang_error_prev_ = ang_error;
 
-  // 5. 속도 발행
+  // 4. 속도 발행
   cmd_vel_pub_->publish(cmd_vel);
 }
 

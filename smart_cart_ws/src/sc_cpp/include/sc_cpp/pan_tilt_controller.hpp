@@ -1,5 +1,10 @@
 #pragma once
 
+// pan_tilt_controller
+// 역할: 사람(전신) bbox 좌표를 받아서 웹캠 서보(Pan/Tilt)를 회전시킴
+//       사람이 화면 중앙에 오도록 자동 추적
+//       ★ /cmd_vel은 발행하지 않음 (follow_controller만 발행)
+
 #include <rclcpp/rclcpp.hpp>
 #include "sc_interfaces/msg/person_bbox.hpp"
 #include "sc_interfaces/msg/pan_tilt_angle.hpp"
