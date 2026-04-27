@@ -1,4 +1,6 @@
 from setuptools import setup, find_packages
+import os
+from glob import glob
 
 package_name = 'sc_python'
 
@@ -10,6 +12,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        # 모델 폴더 내의 모든 .pt 파일을 빌드 시 포함하도록 추가
+        (os.path.join('lib', package_name, 'models'), glob('sc_python/models/*.pt')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

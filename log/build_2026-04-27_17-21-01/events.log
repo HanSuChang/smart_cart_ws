@@ -1,0 +1,9 @@
+[0.000000] (-) TimerEvent: {}
+[0.000120] (-) JobUnselected: {'identifier': 'sc_bringup'}
+[0.000142] (-) JobUnselected: {'identifier': 'sc_gui'}
+[0.000156] (-) JobUnselected: {'identifier': 'sc_interfaces'}
+[0.000168] (-) JobUnselected: {'identifier': 'sc_python'}
+[0.000181] (sc_cpp) JobQueued: {'identifier': 'sc_cpp', 'dependencies': OrderedDict([('sc_interfaces', '/home/hsc/smart_cart_ws/install/sc_interfaces')])}
+[0.000199] (sc_cpp) JobStarted: {'identifier': 'sc_cpp'}
+[0.025004] (sc_cpp) JobEnded: {'identifier': 'sc_cpp', 'rc': 1}
+[0.035826] (-) EventReactorShutdown: {}
