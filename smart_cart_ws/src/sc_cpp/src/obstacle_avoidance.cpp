@@ -478,7 +478,10 @@ double ObstacleAvoidance::getMinDistanceInRange(
 // ════════════════════════════════════════════════════
 double ObstacleAvoidance::getFrontDistance()
 {
-  return getMinDistanceInRange(-front_angle_deg_, front_angle_deg_);
+  // LDS-02는 0°=정면, 양방향으로 전방 범위를 나눠서 측정
+  double front_right = getMinDistanceInRange(0.0, front_angle_deg_);
+  double front_left  = getMinDistanceInRange(360.0 - front_angle_deg_, 360.0);
+  return std::min(front_right, front_left);
 }
 
 // ════════════════════════════════════════════════════
@@ -493,11 +496,11 @@ double ObstacleAvoidance::getFrontDistance()
 double ObstacleAvoidance::getSideClearance()
 {
   if (avoid_dir_ == AvoidDirection::RIGHT) {
-    // 오른쪽으로 비켜감 → 왼쪽(장애물 쪽) 감시 (60~120°)
+    // 오른쪽으로 비켜감 → 왼쪽(장애물 쪽) 감시
     return getMinDistanceInRange(60.0, 120.0);
   } else {
-    // 왼쪽으로 비켜감 → 오른쪽(장애물 쪽) 감시 (-120~-60°)
-    return getMinDistanceInRange(-120.0, -60.0);
+    // 왼쪽으로 비켜감 → 오른쪽(장애물 쪽) 감시
+    return getMinDistanceInRange(240.0, 300.0);
   }
 }
 
@@ -507,7 +510,7 @@ double ObstacleAvoidance::getSideClearance()
 // ════════════════════════════════════════════════════
 double ObstacleAvoidance::getLeftSpace()
 {
-  return getMinDistanceInRange(30.0, 150.0);
+  return getMinDistanceInRange(60.0, 120.0);
 }
 
 // ════════════════════════════════════════════════════
@@ -516,7 +519,7 @@ double ObstacleAvoidance::getLeftSpace()
 // ════════════════════════════════════════════════════
 double ObstacleAvoidance::getRightSpace()
 {
-  return getMinDistanceInRange(-150.0, -30.0);
+  return getMinDistanceInRange(240.0, 300.0);
 }
 
 // ════════════════════════════════════════════════════
