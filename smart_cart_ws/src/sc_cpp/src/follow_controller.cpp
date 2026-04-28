@@ -81,7 +81,7 @@ void FollowController::scan_callback(const sensor_msgs::msg::LaserScan::SharedPt
   float min_range = 3.5;
   for (int i = 0; i < 15; i++) {
     if (msg->ranges[i] > 0.1) min_range = std::min(min_range, msg->ranges[i]);
-    if (msg->ranges[359-i] > 0.1) min_range = std::min(min_range, msg->ranges[359-i]);
+    if (msg->ranges[359 - i] > 0.1) min_range = std::min(min_range, msg->ranges[359 - i]);
   }
   is_internal_safety_stop_ = (min_range < min_safe_dist_);
 }
@@ -135,8 +135,8 @@ void FollowController::control_loop()
   if (elapsed_since_bbox > 0.1) { // 0.1초 이상 지연 시 예측 모드 활성화
     kf_.predict();  // 보정 없이 예측만 계속 (사람이 가려졌을 때)
     if (elapsed_since_bbox > prediction_timeout_sec_) {
-        stop_robot();
-        return;
+      stop_robot();
+      return;
     }
   }
 

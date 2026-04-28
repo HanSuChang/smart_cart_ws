@@ -66,7 +66,6 @@ class PersonTracker(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         
         # YOLOv8 추론
-
         conf_thres = self.get_parameter('conf_threshold').value
         img_sz = self.get_parameter('img_size').value
         results = self.model.predict(frame, imgsz=img_sz, conf=conf_thres, verbose=False)
@@ -87,6 +86,8 @@ class PersonTracker(Node):
 
         # 추적 중인 타겟이 있다면 첫 번째 정보를 /person_bbox로 발행
         if tracks: 
+            # target 변수가 정의되어야 아래에서 사용할 수 있습니다.
+            target = tracks[0]
             bbox_msg = PersonBbox()
             bbox_msg.header.stamp = self.get_clock().now().to_msg()
             bbox_msg.header.frame_id = 'camera_link'
