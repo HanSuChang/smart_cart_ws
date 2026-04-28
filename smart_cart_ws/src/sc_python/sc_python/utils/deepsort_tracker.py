@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ================================================================
 # deepsort_tracker.py
-# [Python 담당] DeepSORT 래퍼 유틸
+# [Python 담당] DeepSORT 래퍼 유틸리티 (최종 수정본)
 # ================================================================
 
 import numpy as np
@@ -28,29 +28,35 @@ class DeepSortTracker:
         """
         detections: YOLO에서 나온 [[x1, y1, w, h, conf, class_id], ...] 리스트
         frame: 현재 영상 프레임
-        return: 추적 중인 객체 리스트 [[x1, y1, w, h, track_id], ...]
+        return: 추적 중인 객체 리스트 [[x, y, w, h, track_id], ...]
         """
-        # DeepSORT 형식에 맞게 데이터 변환 ([left, top, w, h], confidence, detection_class)
+        
         raw_detections = []
         for det in detections:
             x1, y1, w, h, conf, cls = det
-            # 사람(class_id=0)만 필터링해서 추적 대상에 추가
-            if int(cls) == 0:
+            
+            # 클래스 번호를 정수형으로 변환하여 판단
+            class_id = int(cls)
+            
+            # 사람(0) 또는 물체(2)를 필터링하여 DeepSORT 입력으로 변환
+            if class_id == 0:
                 raw_detections.append(([x1, y1, w, h], conf, "person"))
+            elif class_id == 2:
+                raw_detections.append(([x1, y1, w, h], conf, "object"))
 
-        # 트래커 업데이트
+        # 트래커 업데이트 (필터링된 데이터만 입력)
         tracks = self.tracker.update_tracks(raw_detections, frame=frame)
 
         results = []
         for track in tracks:
-            # 확정된(Confirmed) 상태이고, 현재 프레임에서 감지된 경우만 반환
+            # 확정된(Confirmed) 상태의 트랙만 반환
             if not track.is_confirmed():
                 continue
             
             track_id = track.track_id
             ltrb = track.to_ltrb() # [left, top, right, bottom]
             
-            # C++ 노드(FollowController)가 쓰기 편하게 [x, y, w, h, id]로 변환
+            # 정수 좌표 계산
             x = int(ltrb[0])
             y = int(ltrb[1])
             w = int(ltrb[2] - ltrb[0])
