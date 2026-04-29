@@ -1,33 +1,293 @@
-#!/usr/bin/env python3
-# ================================================================
-# cart_gui.py
-# [GUI 담당] 카트 상태 실시간 표시
-#
-# Subscribe: /cart_status (sc_interfaces/msg/CartStatus)
-#            /webcam/image_raw (카메라 영상 표시)
-#            /rpi_camera/image_raw (물체 인식 영상 표시)
-#
-# GUI 프레임워크: PyQt5 / rqt / 등 GUI 담당 팀원이 결정
-# ================================================================
+cart_gui.py
 
-import rclpy
-from rclpy.node import Node
+import socket
+import io
+import qrcode
+import time
+import csv
+import os
+from flask import Flask, render_template_string, send_file, jsonify, request
 
 
-class CartGui(Node):
+# =========================================================
+# 1. 데이터 관리 클래스 (Database & Cart Manager)
+# =========================================================
+class CartManager:
+    """상품 DB 로드 및 장바구니 상태 관리를 담당합니다."""
+
+    def __init__(self, db_path='product_db.csv'):
+        self.db_path = db_path
+        self.product_db = self._load_db()
+        self.cart_items = []
+        self.payment_completed = False
+        self.last_state = {"length": 0, "qty_sum": 0}
+
+    def _load_db(self):
+        db = {}
+        if not os.path.exists(self.db_path):
+            print(f"[경고] '{self.db_path}' 파일이 없습니다.")
+            return db
+        try:
+            with open(self.db_path, 'r', encoding='utf-8-sig') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get('class_name'):
+                        db[row['class_name']] = {
+                            "name": row.get('name', '이름 없음'),
+                            "price": int(row.get('price', 0)),
+                            "img_url": row.get('img_url', '')
+                        }
+            print(f"DB 로드 완료: {len(db)}개 품목")
+        except Exception as e:
+            print(f"DB 로드 오류: {e}")
+        return db
+
+    def add_item(self, class_name):
+        db_item = self.product_db.get(class_name, {
+            "name": f"미등록 상품 ({class_name})",
+            "price": 0,
+            "img_url": "https://placehold.co/150x150/EEEEEE/333333?text=Unknown"
+        })
+        for item in self.cart_items:
+            if item['name'] == db_item['name']:
+                item['qty'] += 1
+                return True
+        self.cart_items.append({
+            "name": db_item["name"], "price": db_item["price"],
+            "qty": 1, "img_url": db_item["img_url"]
+        })
+        return True
+
+    def reset(self):
+        self.cart_items = []
+        self.payment_completed = False
+
+    def check_changed(self):
+        curr_len = len(self.cart_items)
+        curr_qty = sum(item['qty'] for item in self.cart_items)
+        changed = (curr_len != self.last_state["length"] or curr_qty != self.last_state["qty_sum"])
+        self.last_state = {"length": curr_len, "qty_sum": curr_qty}
+        return changed
+
+
+# =========================================================
+# 2. 시스템 유틸리티 클래스
+# =========================================================
+class SystemUtils:
+    """네트워크 IP 및 QR 코드 생성을 담당합니다."""
+
+    @staticmethod
+    def get_local_ip():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+        except:
+            ip = '127.0.0.1'
+        finally:
+            s.close()
+        return ip
+
+    @staticmethod
+    def create_qr_buffer(url):
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        return buf
+
+
+# =========================================================
+# 3. 템플릿 엔진 클래스 (UI/UX 담당)
+# =========================================================
+class TemplateManager:
+
+    HEAD_COMMON = """
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #eaeded; font-family: -apple-system, sans-serif; padding-bottom: 120px; }
+        .navbar-custom { background-color: #232f3e; color: white; padding: 15px; text-align: center; font-weight: 700; font-size: 1.4rem; }
+        .promo-banner { background-color: #e3f2fd; color: #0d47a1; padding: 12px; text-align: center; font-weight: bold; font-size: 0.95rem; }
+        .cart-container { background-color: white; margin-top: 15px; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .product-card { display: flex; border-bottom: 1px solid #ddd; padding-bottom: 20px; margin-bottom: 20px; }
+        .product-img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; margin-right: 15px; }
+        .fixed-bottom-bar { position: fixed; bottom: 0; left: 0; width: 100%; background-color: white; padding: 15px 25px; box-shadow: 0 -4px 20px rgba(0,0,0,0.1); z-index: 1030; display: flex; justify-content: space-between; align-items: center; border-radius: 20px 20px 0 0; }
+        .total-price { font-size: 1.8rem; font-weight: 900; color: #B12704; }
+        .btn-pay { font-size: 1.2rem; padding: 12px 25px; border-radius: 50px; background-color: #ffd814; border: 1px solid #fcd200; font-weight: bold; }
+    </style>
+    """
+
+
+    MAIN = """
+    <!DOCTYPE html><html><head>""" + HEAD_COMMON + """<title>Smart Cart</title></head>
+    <body>
+        <nav class="navbar-custom">Frictionless Store</nav>
+        <div class="promo-banner">🎉 [오픈 이벤트] 신선식품 코너 20% 할인 진행 중!</div>
+        <div class="container-fluid">
+            <div class="cart-container">
+                <h5 class="fw-bold border-bottom pb-2 mb-3">장바구니 <small class="text-muted fw-normal">자동 인식 대기중</small></h5>
+                {% if items %}
+                    {% for item in items %}
+                    <div class="product-card">
+                        <img src="{{ item.img_url }}" class="product-img" onerror="this.src='https://placehold.co/90x90?text=No+Image'">
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">{{ item.name }}</div>
+                            <div class="text-success small mb-2">바로 결제 가능</div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fs-5 fw-bold">{{ "{:,}".format(item.price * item.qty) }}원</span>
+                                <span class="badge bg-light text-dark border">수량: {{ item.qty }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-5 text-muted">장바구니가 비어 있습니다.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% set total_qty = items|sum(attribute='qty') %}
+        {% set total_price = namespace(value=0) %}
+        {% for item in items %}{% set total_price.value = total_price.value + (item.price * item.qty) %}{% endfor %}
+
+        <div class="fixed-bottom-bar">
+            <div><div class="small text-muted">총 수량: {{ total_qty }}개</div><div class="total-price">{{ "{:,}".format(total_price.value) }}원</div></div>
+            <button class="btn btn-pay" onclick="new bootstrap.Modal(document.getElementById('qrModal')).show(); document.getElementById('qrImg').src='/qrcode?t='+Date.now()">💳 결제하기</button>
+        </div>
+
+        <div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 rounded-4 text-center shadow-lg"><div class="modal-body p-5">
+                <h4 class="fw-bold mb-3">결제 QR 코드</h4><p class="text-muted">스마트폰으로 스캔하여 결제하세요.</p>
+                <div class="p-3 bg-light rounded-4 d-inline-block border"><img id="qrImg" src="" style="width: 200px;"></div>
+                <div class="mt-4"><button class="btn btn-outline-dark rounded-pill px-5" data-bs-dismiss="modal">취소</button></div>
+            </div></div></div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            setInterval(() => {
+                fetch('/api/status').then(r => r.json()).then(data => {
+                    if(data.cart_changed) window.location.reload();
+                    if(data.paid) window.location.href='/show_success';
+                });
+            }, 1000);
+        </script>
+    </body></html>
+    """
+
+    RECEIPT = """
+    <!DOCTYPE html><html><head>""" + HEAD_COMMON + """<title>Receipt</title>
+    <style>.receipt-card { max-width: 400px; margin: 30px auto; border-radius: 12px; border: 1px solid #ddd; background: white; }</style></head>
+    <body class="p-3">
+        <div class="receipt-card p-4 shadow-sm text-center">
+            <div class="display-4 text-success mb-2">✔</div><h3 class="fw-bold">주문 완료</h3>
+            <div class="border-top border-bottom py-3 my-3 text-start">
+                {% for item in items %}<div class="d-flex justify-content-between"><span>{{item.name}} ({{item.qty}})</span><b>{{ "{:,}".format(item.price*item.qty) }}원</b></div>{% endfor %}
+            </div>
+            <div class="d-flex justify-content-between fs-4 fw-bold"><span>총액</span><span class="text-danger">{{ "{:,}".format(total) }}원</span></div>
+            <button class="btn btn-dark w-100 mt-4 py-3 fw-bold" onclick="closeApp()">확인</button>
+        </div>
+        <script>
+            function closeApp() {
+                const ua = navigator.userAgent.toLowerCase();
+                if(ua.includes('kakaotalk')) location.href='kakaotalk://inappbrowser/close';
+                else if(ua.includes('naver')) location.href='naversearchapp://inappbrowser/close';
+                else { window.open('','_self').close(); setTimeout(()=>{ location.href='/thank_you' },500); }
+            }
+        </script>
+    </body></html>
+    """
+
+    SUCCESS_POPUP = """
+    <!DOCTYPE html><html><head>""" + HEAD_COMMON + """<title>Success</title></head>
+    <body>
+        <div class="modal fade show" style="display:block; background:rgba(0,0,0,0.5);" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 rounded-4 text-center shadow-lg"><div class="modal-body p-5">
+                <div style="font-size: 50px; color: #007600; margin-bottom: 15px;">✔</div>
+                <h4 class="fw-bold mb-3">결제가 완료되었습니다</h4>
+                <p class="text-muted mb-4">이용해 주셔서 감사합니다.<br>안전하게 상품을 담아가세요.</p>
+                <button class="btn btn-dark rounded-pill px-5 py-2 fw-bold" onclick="window.location.href='/reset_cart'">확인</button>
+            </div></div></div>
+        </div>
+    </body></html>
+    """
+
+
+# =========================================================
+# 4. 서버 메인 엔진 클래스
+# =========================================================
+class SmartCartServer:
+    """Flask 서버를 구동하고 모든 API 라우팅을 총괄합니다."""
+
     def __init__(self):
-        super().__init__('cart_gui')
-        # TODO: GUI 담당 팀원이 구현
-        self.get_logger().info('CartGui 노드 생성됨 (TODO: 구현 필요)')
+        self.app = Flask(__name__)
+        self.cart = CartManager()
+        self.utils = SystemUtils()
+        self.ui = TemplateManager()
+        self.host_ip = self.utils.get_local_ip()
+        self._setup_routes()
 
+    def _setup_routes(self):
+        @self.app.after_request
+        def add_header(r):
+            r.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            return r
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = CartGui()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+        @self.app.route('/')
+        def index():
+            self.cart.check_changed()  # 상태 기록 갱신
+            return render_template_string(self.ui.MAIN, items=self.cart.cart_items)
+
+        @self.app.route('/qrcode')
+        def qrcode_gen():
+            url = f"http://{self.host_ip}:5000/process_payment?t={int(time.time())}"
+            return send_file(self.utils.create_qr_buffer(url), mimetype='image/png')
+
+        @self.app.route('/process_payment')
+        def process():
+            total = sum(i['price'] * i['qty'] for i in self.cart.cart_items)
+            res = render_template_string(self.ui.RECEIPT, items=self.cart.cart_items, total=total)
+            self.cart.payment_completed = True
+            return res
+
+        @self.app.route('/api/status')
+        def status():
+            return jsonify({"paid": self.cart.payment_completed, "cart_changed": self.cart.check_changed()})
+
+        @self.app.route('/api/add_item', methods=['POST'])
+        def api_add():
+            data = request.json
+            if not data: return jsonify({"status": "fail"}), 400
+            c_name = data.get('class_name')
+            if c_name and self.cart.add_item(c_name):
+                return jsonify({"status": "ok"})
+            return jsonify({"status": "fail"}), 400
+
+        @self.app.route('/show_success')
+        def show_success():
+            return render_template_string(self.ui.SUCCESS_POPUP)
+
+        @self.app.route('/reset_cart')
+        def reset():
+            self.cart.reset()
+            return """<script>window.location.href='/';</script>"""
+
+        @self.app.route('/thank_you')
+        def thanks():
+            return "<body style='text-align:center;padding-top:100px;'><h3>결제가 완료되었습니다.</h3><p>화면을 닫아주세요.</p></body>"
+
+    def run(self):
+        print(
+            f"\n{'=' * 45}\n Smart Cart Server Online\n API: http://{self.host_ip}:5000/api/add_item\n GUI: http://{self.host_ip}:5000\n{'=' * 45}")
+        self.app.run(host='0.0.0.0', port=5000, debug=False)
 
 
 if __name__ == '__main__':
-    main()
+    server = SmartCartServer()
+    server.run()
+
