@@ -1,23 +1,30 @@
 # ================================================================
 # webcam_params.yaml
-# USB 웹캠 2대 설정
+# USB 웹캠 2대 설정 (탑싱크 TS-B7WQ30 1440p x2)
 # 웹캠1 (/dev/video0) → 사람 추종용
 # 웹캠2 (/dev/video2) → 물체 인식용
-# ros2 topic list 후 카메라 모델 확인
+# 실제 연결 후 ls /dev/video* 로 번호 확인 필수
 # ================================================================
 
 # 웹캠 1번 — 사람 추종
+# v4l2_camera가 640x480으로 리사이즈해서 /webcam/image_raw 발행
+# YOLO 추론은 person_tracker.py에서 img_size=320으로 추가 축소
 webcam:
   ros__parameters:
     video_device: "/dev/video0"
-    image_size: [320, 240]
+    image_size: [640, 480]
     pixel_format: "mjpeg"
     camera_frame_id: "webcam_link"
 
 # 웹캠 2번 — 물체 인식
+# Roboflow 학습 모델 (item_classifier.py)이 사용
 webcam2:
   ros__parameters:
     video_device: "/dev/video2"
-    image_size: [320, 240]
+    image_size: [640, 480]
     pixel_format: "mjpeg"
     camera_frame_id: "webcam2_link"
+
+    # 실제 터틀봇에 웹캠 2개 꽂고 나서 번호 확인:
+    # ls /dev/video*
+    # video0, video1, video2, video3 이렇게 4개 뜨면 video0+video1이 첫 번째 웹캠, video2+video3이 두 번째 웹캠

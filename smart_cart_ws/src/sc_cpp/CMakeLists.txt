@@ -5,13 +5,14 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -O2)
 endif()
 
+# ── 의존성 ──
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
+
 find_package(sc_interfaces REQUIRED)
 
 set(DEPS
@@ -20,11 +21,12 @@ set(DEPS
   geometry_msgs
   sensor_msgs
   std_msgs
-  nav_msgs
+  
   sc_interfaces
 )
 
-# KalmanFilter
+# ── KalmanFilter (8-state: x,y,w,h,vx,vy,vw,vh) ──
+# follow_controller에서 사람 사각지대 예측에 사용
 add_library(kalman_filter STATIC
   src/kalman_filter.cpp
 )
@@ -33,7 +35,9 @@ target_include_directories(kalman_filter PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-# FollowController
+# ── FollowController ──
+# /person_bbox + /scan → PID + Kalman → /cmd_vel
+# ★ /cmd_vel은 이 노드에서만 발행
 add_library(follow_controller_component SHARED
   src/follow_controller.cpp
 )
@@ -48,7 +52,8 @@ rclcpp_components_register_node(follow_controller_component
   EXECUTABLE follow_controller
 )
 
-# SafetyMonitor
+# ── SafetyMonitor ──
+# /scan → 장애물 감지 → /safety_stop
 add_library(safety_monitor_component SHARED
   src/safety_monitor.cpp
 )
@@ -62,7 +67,8 @@ rclcpp_components_register_node(safety_monitor_component
   EXECUTABLE safety_monitor
 )
 
-# LidController
+# ── LidController ──
+# /item_detected → 바구니 뚜껑 서보 제어
 add_library(lid_controller_component SHARED
   src/lid_controller.cpp
 )
@@ -76,7 +82,8 @@ rclcpp_components_register_node(lid_controller_component
   EXECUTABLE lid_controller
 )
 
-# PanTiltController
+# ── PanTiltController ──
+# /person_bbox → 웹캠 Pan/Tilt 서보 제어
 add_library(pan_tilt_controller_component SHARED
   src/pan_tilt_controller.cpp
 )
@@ -90,7 +97,8 @@ rclcpp_components_register_node(pan_tilt_controller_component
   EXECUTABLE pan_tilt_controller
 )
 
-# StatusPublisher
+# ── StatusPublisher ──
+# 여러 토픽 모아서 /cart_status → GUI 발행
 add_library(status_publisher_component SHARED
   src/status_publisher.cpp
 )

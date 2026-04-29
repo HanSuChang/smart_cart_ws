@@ -4,16 +4,14 @@
 # ros2 param set 또는 rqt_reconfigure로 실시간 변경 가능
 # ================================================================
 
-
 # 터틀봇3 주행 중에 터미널 열어서 subl . 로 열기
 # 그 다음 내가 바꿀려는 yaml 파일 열어서
-# 명령어로 ex)  ros2 param set /safety_monitor stop_distance_m 0.2
+# 명령어로 ex)  ros2 param set /follow_controller target_bbox_height 200.0
 
-#여기서 주의할 점 (딱 하나!)
-#이렇게 명령어로 바꾼 건 "메모리"만 바꾼 겁니다.
-
-#만약 로봇을 껐다가 다시 켜면? 다시 원래 yaml에 적혀있던 0.4로 돌아갑니다.
-#그래서 테스트 결과 0.2가 정말 마음에 든다면, 그때 subl .에서 yaml 파일의 숫자를 0.2로 고쳐서 저장해둬야 다음번에도 그 값으로 시작합니다.
+# 여기서 주의할 점 (딱 하나!)
+# 이렇게 명령어로 바꾼 건 "메모리"만 바꾼 겁니다.
+# 만약 로봇을 껐다가 다시 켜면? 다시 원래 yaml에 적혀있던 값으로 돌아갑니다.
+# 테스트 결과 마음에 든 값이 있다면 subl . 로 yaml 파일 열어서 직접 저장해두세요.
 
 follow_controller:
   ros__parameters:
@@ -28,11 +26,16 @@ follow_controller:
     angular_kd: 0.001
 
     # 목표 bbox 높이 (이 픽셀 높이일 때 사람과의 거리가 적절하다고 판단)
+    # 웹캠 1440p → v4l2_camera에서 640x480으로 리사이즈해서 발행하므로
+    # bbox 높이 기준은 480p 기준으로 설정
     # 값 크게 → 사람에 더 가까이 붙음
     # 값 작게 → 사람에서 더 멀리 떨어짐
-    target_bbox_height: 300.0
+    target_bbox_height: 200.0
 
-    # 카메라 해상도
+    # ★ 웹캠 탑싱크 TS-B7WQ30 (1440p)
+    # v4l2_camera가 640x480으로 리사이즈해서 /webcam/image_raw로 발행
+    # YOLO 추론은 person_tracker.py의 img_size(320)에서 따로 조절
+    # 여기 image_width는 C++에서 화면 중앙 계산에만 사용
     image_width: 640
 
     # 속도 제한
@@ -44,3 +47,14 @@ follow_controller:
 
     # 제어 루프 주기
     control_freq_hz: 20.0
+
+    # 최소 안전 거리 (LiDAR 직접 판단)
+    min_safe_dist: 0.25
+
+    # Kalman 예측 유지 시간 (사각지대 대응)
+    prediction_timeout_sec: 0.8
+
+    # 터미널 실시간 튜닝 명령어:
+    # ros2 param set /follow_controller target_bbox_height 200.0
+    # ros2 param set /follow_controller image_width 640
+    # ros2 param set /follow_controller linear_kp 0.003

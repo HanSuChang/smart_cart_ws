@@ -5,6 +5,6 @@
 
 person_tracker:
   ros__parameters:
-    model_path: "yolov8s.pt"
+    model_path: "yolov8n.pt"
     conf_threshold: 0.5
     img_size: 320      
