@@ -1,4 +1,8 @@
-cart_gui.py
+# =====================================================================
+# cart_gui.py
+# Flask 기반 웹 장바구니 + QR 결제 시스템
+# 별도 5000번 포트로 실행 (모바일에서 접속해서 결제)
+# =====================================================================
 
 import socket
 import io
@@ -13,7 +17,7 @@ from flask import Flask, render_template_string, send_file, jsonify, request
 # 1. 데이터 관리 클래스 (Database & Cart Manager)
 # =========================================================
 class CartManager:
-    """상품 DB 로드 및 장바구니 상태 관리를 담당합니다."""
+    """상품 DB 로드 및 장바구니 상태 관리"""
 
     def __init__(self, db_path='product_db.csv'):
         self.db_path = db_path
@@ -71,10 +75,10 @@ class CartManager:
 
 
 # =========================================================
-# 2. 시스템 유틸리티 클래스
+# 2. 시스템 유틸리티
 # =========================================================
 class SystemUtils:
-    """네트워크 IP 및 QR 코드 생성을 담당합니다."""
+    """네트워크 IP 및 QR 코드 생성"""
 
     @staticmethod
     def get_local_ip():
@@ -82,7 +86,7 @@ class SystemUtils:
         try:
             s.connect(('10.255.255.255', 1))
             ip = s.getsockname()[0]
-        except:
+        except Exception:
             ip = '127.0.0.1'
         finally:
             s.close()
@@ -101,7 +105,7 @@ class SystemUtils:
 
 
 # =========================================================
-# 3. 템플릿 엔진 클래스 (UI/UX 담당)
+# 3. 템플릿 엔진 클래스 (UI/UX)
 # =========================================================
 class TemplateManager:
 
@@ -121,7 +125,6 @@ class TemplateManager:
         .btn-pay { font-size: 1.2rem; padding: 12px 25px; border-radius: 50px; background-color: #ffd814; border: 1px solid #fcd200; font-weight: bold; }
     </style>
     """
-
 
     MAIN = """
     <!DOCTYPE html><html><head>""" + HEAD_COMMON + """<title>Smart Cart</title></head>
@@ -219,10 +222,10 @@ class TemplateManager:
 
 
 # =========================================================
-# 4. 서버 메인 엔진 클래스
+# 4. Flask 서버 메인 엔진
 # =========================================================
 class SmartCartServer:
-    """Flask 서버를 구동하고 모든 API 라우팅을 총괄합니다."""
+    """Flask 서버 구동 + 모든 API 라우팅"""
 
     def __init__(self):
         self.app = Flask(__name__)
@@ -240,7 +243,7 @@ class SmartCartServer:
 
         @self.app.route('/')
         def index():
-            self.cart.check_changed()  # 상태 기록 갱신
+            self.cart.check_changed()
             return render_template_string(self.ui.MAIN, items=self.cart.cart_items)
 
         @self.app.route('/qrcode')
@@ -262,7 +265,8 @@ class SmartCartServer:
         @self.app.route('/api/add_item', methods=['POST'])
         def api_add():
             data = request.json
-            if not data: return jsonify({"status": "fail"}), 400
+            if not data:
+                return jsonify({"status": "fail"}), 400
             c_name = data.get('class_name')
             if c_name and self.cart.add_item(c_name):
                 return jsonify({"status": "ok"})
@@ -283,7 +287,9 @@ class SmartCartServer:
 
     def run(self):
         print(
-            f"\n{'=' * 45}\n Smart Cart Server Online\n API: http://{self.host_ip}:5000/api/add_item\n GUI: http://{self.host_ip}:5000\n{'=' * 45}")
+            f"\n{'=' * 45}\n Smart Cart Server Online\n"
+            f" API: http://{self.host_ip}:5000/api/add_item\n"
+            f" GUI: http://{self.host_ip}:5000\n{'=' * 45}")
         self.app.run(host='0.0.0.0', port=5000, debug=False)
 
 
@@ -291,3 +297,8 @@ if __name__ == '__main__':
     server = SmartCartServer()
     server.run()
 
+
+def main():
+    """ros2 run sc_gui cart_server 로 단독 실행할 때 호출"""
+    server = SmartCartServer()
+    server.run()

@@ -7,10 +7,20 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- 자체 패키지 -->
   <exec_depend>sc_interfaces</exec_depend>
   <exec_depend>sc_cpp</exec_depend>
   <exec_depend>sc_python</exec_depend>
   <exec_depend>sc_gui</exec_depend>
+
+  <!-- 외부 의존성 (launch에서 사용) -->
+  <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

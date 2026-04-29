@@ -1,25 +1,37 @@
-robot_gui.py
+# =====================================================================
+# robot_gui.py
+# Smart Cart 메인 관제 GUI (PyQt6)
+#
+# 기능:
+#   1. 맵 표시 + 웨이포인트(노드) 찍기/저장
+#   2. 사람 추종 모드 / 자동 주행 모드 전환
+#   3. 저장된 웨이포인트로 Nav2 자동 주행 (send_goal)
+#   4. USB 웹캠 2대 실시간 표시
+#   5. 비상 정지
+# =====================================================================
 
 import sys
-import yaml
 import base64
 import roslibpy
 import requests
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout,
-                             QHBoxLayout, QWidget, QMessageBox, QTextEdit, QFrame, QPushButton)
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
+    QMessageBox, QTextEdit, QFrame, QPushButton, QScrollArea
+)
+from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QDateTime, QThread
-from waypoint_manager import InteractiveMapPanel
+
+from sc_gui.waypoint_manager import InteractiveMapPanel
 
 try:
     import paramiko
 except ImportError:
-    print("paramiko 라이브러리가 필요합니다. CMD에서 'pip install paramiko'를 실행하세요.")
+    print("paramiko 라이브러리가 필요합니다. 'pip install paramiko'를 실행하세요.")
     sys.exit(1)
 
 
 # =====================================================================
-# [0] 원격 런치 매니저: SSH Thread 처리 클래스
+# [0] 원격 런치 매니저: SSH로 터틀봇에 launch 명령 전송
 # =====================================================================
 class SshWorker(QThread):
     log_signal = pyqtSignal(str)
@@ -33,25 +45,25 @@ class SshWorker(QThread):
 
     def run(self):
         try:
-            self.log_signal.emit(f"> [SSH] ATTEMPTING SECURE CONNECTION TO {self.username}@{self.ip}...")
+            self.log_signal.emit(f"> [SSH] CONNECTING TO {self.username}@{self.ip}...")
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(self.ip, username=self.username, password=self.password, timeout=5)
-            self.log_signal.emit("> [SSH] ACCESS GRANTED. EXECUTING LAUNCH SEQUENCE...")
+            self.log_signal.emit("> [SSH] ACCESS GRANTED. EXECUTING LAUNCH...")
 
             stdin, stdout, stderr = ssh.exec_command(self.command)
             err = stderr.read().decode().strip()
             if err and "command not found" in err.lower():
                 self.log_signal.emit(f"> [SSH ERROR] {err}")
             else:
-                self.log_signal.emit("> [SSH] REMOTE LAUNCH SIGNAL TRANSMITTED SUCCESSFULLY.")
+                self.log_signal.emit("> [SSH] REMOTE LAUNCH TRANSMITTED.")
             ssh.close()
         except Exception as e:
             self.log_signal.emit(f"> [SSH FATAL ERROR] {e}")
 
 
 # =====================================================================
-# [1] 통신 매니저: ROS2 Websocket 처리 클래스
+# [1] ROS Manager: rosbridge_websocket 통신 + Nav2 send_goal
 # =====================================================================
 class RosManager(QObject):
     pose_signal = pyqtSignal(float, float)
@@ -67,60 +79,116 @@ class RosManager(QObject):
         self.is_moving = False
 
     def connect_to_robot(self):
-        self.log_signal.emit(f"> ESTABLISHING UPLINK TO {self.ip_address}:9090...")
+        self.log_signal.emit(f"> CONNECTING TO {self.ip_address}:9090...")
         try:
             self.ros = roslibpy.Ros(host=self.ip_address, port=9090)
             self.ros.run()
 
             if self.ros.is_connected:
-                self.log_signal.emit("> UPLINK SECURED. TELEMETRY ACTIVE.")
+                self.log_signal.emit("> CONNECTED. TELEMETRY ACTIVE.")
                 self.status_signal.emit("UPDATE")
 
-                self.odom_listener = roslibpy.Topic(self.ros, '/odom', 'nav_msgs/Odometry')
+                # ── /odom (터틀봇 위치) ──
+                self.odom_listener = roslibpy.Topic(
+                    self.ros, '/odom', 'nav_msgs/Odometry')
                 self.odom_listener.subscribe(self.odom_callback)
 
-                self.cmd_vel_listener = roslibpy.Topic(self.ros, '/cmd_vel', 'geometry_msgs/Twist')
+                # ── /cmd_vel (이동 중 여부 감지) ──
+                self.cmd_vel_listener = roslibpy.Topic(
+                    self.ros, '/cmd_vel', 'geometry_msgs/Twist')
                 self.cmd_vel_listener.subscribe(self.cmd_vel_callback)
 
-                self.cam1_listener = roslibpy.Topic(self.ros, '/webcam/image_raw/compressed',
-                                                    'sensor_msgs/CompressedImage')
+                # ── 웹캠 1번 (사람 추종용) ──
+                self.cam1_listener = roslibpy.Topic(
+                    self.ros, '/webcam/image_raw/compressed',
+                    'sensor_msgs/CompressedImage')
                 self.cam1_listener.subscribe(self.camera1_callback)
 
-                self.cam2_listener = roslibpy.Topic(self.ros, '/rpi_camera/image_raw/compressed',
-                                                    'sensor_msgs/CompressedImage')
+                # ── 웹캠 2번 (물체 인식용) — USB 웹캠으로 변경 ──
+                self.cam2_listener = roslibpy.Topic(
+                    self.ros, '/webcam2/image_raw/compressed',
+                    'sensor_msgs/CompressedImage')
                 self.cam2_listener.subscribe(self.camera2_callback)
 
-                self.item_listener = roslibpy.Topic(self.ros, '/item_detected', 'sc_interfaces/ItemDetected')
+                # ── /item_detected (물체 인식 → Flask 결제 연동) ──
+                self.item_listener = roslibpy.Topic(
+                    self.ros, '/item_detected', 'sc_interfaces/ItemDetected')
                 self.item_listener.subscribe(self.item_callback)
             else:
-                self.log_signal.emit("> [WARNING] WS REFUSED. (Launch가 아직 실행되지 않았을 수 있습니다)")
+                self.log_signal.emit("> [WARNING] WS REFUSED. (Launch가 아직 실행 안 됐을 수 있음)")
         except Exception as e:
             self.log_signal.emit(f"> [ERROR] NETWORK FAILURE: {e}")
 
-    def send_mission(self, mission_id):
+    # ── 사람 추종 / 정지 모드 전환 ──
+    def send_mode(self, mode):
+        """
+        mode: 'follow' / 'navigate' / 'idle'
+        follow_controller가 이걸 구독해서 모드 전환
+        """
         if self.ros and self.ros.is_connected:
-            topic = roslibpy.Topic(self.ros, '/mission_control', 'std_msgs/String')
-            topic.publish(roslibpy.Message({'data': mission_id}))
+            topic = roslibpy.Topic(
+                self.ros, '/smart_cart/mode', 'std_msgs/String')
+            topic.publish(roslibpy.Message({'data': mode}))
             topic.unadvertise()
+            self.log_signal.emit(f"> MODE CHANGED → [{mode.upper()}]")
+
+    # ── Nav2 자동 주행: 목표 좌표로 이동 ──
+    def send_nav_goal(self, x, y):
+        """
+        Nav2 navigate_to_pose 액션에 send_goal
+        x, y: 목적지 실제 좌표 (m)
+        """
+        if not self.ros or not self.ros.is_connected:
+            self.log_signal.emit("> [ERROR] ROS 연결 안 됨")
+            return False
+
+        # 먼저 navigate 모드로 전환 (follow_controller 정지)
+        self.send_mode('navigate')
+
+        # Nav2 액션 클라이언트
+        action_client = roslibpy.actionlib.ActionClient(
+            self.ros, '/navigate_to_pose', 'nav2_msgs/NavigateToPose')
+
+        goal_msg = {
+            'pose': {
+                'header': {'frame_id': 'map'},
+                'pose': {
+                    'position': {'x': float(x), 'y': float(y), 'z': 0.0},
+                    'orientation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
+                }
+            }
+        }
+
+        goal = roslibpy.actionlib.Goal(action_client, roslibpy.Message(goal_msg))
+        goal.on('result', lambda r: self.log_signal.emit("> [NAV2] 목적지 도착!"))
+        goal.on('feedback', lambda f: None)
+        goal.send()
+        self.log_signal.emit(f"> [NAV2] 목적지 전송: x={x:.2f}, y={y:.2f}")
+        return True
 
     def send_estop(self):
+        """비상 정지 (사람 추종 + Nav2 둘 다 멈춤)"""
         if self.ros and self.ros.is_connected:
+            # 1. mode를 idle로
+            self.send_mode('idle')
+            # 2. /safety_stop true 발행
             topic = roslibpy.Topic(self.ros, '/safety_stop', 'std_msgs/Bool')
             topic.publish(roslibpy.Message({'data': True}))
             topic.unadvertise()
 
     def disconnect(self):
         if self.ros and self.ros.is_connected:
-            if hasattr(self, 'odom_listener'): self.odom_listener.unsubscribe()
-            if hasattr(self, 'cmd_vel_listener'): self.cmd_vel_listener.unsubscribe()
-            if hasattr(self, 'cam1_listener'): self.cam1_listener.unsubscribe()
-            if hasattr(self, 'cam2_listener'): self.cam2_listener.unsubscribe()
-            if hasattr(self, 'item_listener'): self.item_listener.unsubscribe()
+            for attr in ['odom_listener', 'cmd_vel_listener',
+                         'cam1_listener', 'cam2_listener', 'item_listener']:
+                if hasattr(self, attr):
+                    getattr(self, attr).unsubscribe()
             self.ros.terminate()
 
+    # ── 콜백 ──
     def odom_callback(self, message):
         try:
-            x, y = message['pose']['pose']['position']['x'], message['pose']['pose']['position']['y']
+            x = message['pose']['pose']['position']['x']
+            y = message['pose']['pose']['position']['y']
             self.pose_signal.emit(x, y)
         except Exception:
             pass
@@ -147,17 +215,17 @@ class RosManager(QObject):
             pass
 
     def item_callback(self, message):
+        """물체 인식 결과 → Flask 결제 서버에 전달"""
         try:
             item_name = message.get('item_name', '')
             in_basket = message.get('in_basket_zone', True)
-
             if in_basket and item_name:
-                res = requests.post('http://127.0.0.1:5000/api/add_item',
-                                    json={'class_name': item_name},
-                                    timeout=1.0)
-
+                res = requests.post(
+                    'http://127.0.0.1:5000/api/add_item',
+                    json={'class_name': item_name},
+                    timeout=1.0)
                 if res.status_code == 200:
-                    self.log_signal.emit(f"> [WEB 연동] '{item_name}' 장바구니 갱신 완료")
+                    self.log_signal.emit(f"> [WEB 연동] '{item_name}' 장바구니 갱신")
         except requests.exceptions.RequestException:
             pass
         except Exception as e:
@@ -183,7 +251,7 @@ class BasePanel(QFrame):
 
 class LogPanel(BasePanel):
     def __init__(self):
-        super().__init__(" SYSTEM DIAGNOSTICS & EVENT LOG")
+        super().__init__(" 시스템 로그")
         self.log_window = QTextEdit()
         self.log_window.setReadOnly(True)
         self.log_window.setProperty("class", "Terminal")
@@ -215,13 +283,15 @@ class CameraPanel(BasePanel):
     def render_base_image(self, img_bytes):
         pixmap = QPixmap()
         pixmap.loadFromData(img_bytes)
-        return pixmap.scaled(self.camera_label.size(), Qt.AspectRatioMode.KeepAspectRatio,
+        return pixmap.scaled(self.camera_label.size(),
+                             Qt.AspectRatioMode.KeepAspectRatio,
                              Qt.TransformationMode.SmoothTransformation)
 
 
 class MainCameraPanel(CameraPanel):
+    """웹캠 1번 — 사람 추종용 (FPV + 조준점)"""
     def __init__(self):
-        super().__init__(" FPV TARGET TRACKING", "NO SIGNAL /webcam/image_raw")
+        super().__init__(" 사람 추종 카메라", "NO SIGNAL /webcam/image_raw")
 
     def update_view(self, img_bytes):
         scaled_pixmap = self.render_base_image(img_bytes)
@@ -242,91 +312,141 @@ class MainCameraPanel(CameraPanel):
 
 
 class BasketCameraPanel(CameraPanel):
+    """웹캠 2번 — 물체 인식용 (USB 웹캠)"""
     def __init__(self):
-        super().__init__(" ITEM RECOGNITION VISION", "NO SIGNAL /rpi_camera")
+        super().__init__(" 물체 인식 카메라", "NO SIGNAL /webcam2/image_raw")
 
     def update_view(self, img_bytes):
         self.camera_label.setPixmap(self.render_base_image(img_bytes))
 
 
+# =====================================================================
+# [3] 사이드바 (시스템 + 미션 버튼)
+# =====================================================================
 class SidebarPanel(QFrame):
     launch_requested = pyqtSignal()
-    mission_requested = pyqtSignal(str, str)
+    follow_requested = pyqtSignal()         # 사람 추종 시작
+    stop_follow_requested = pyqtSignal()    # 사람 추종 정지
+    waypoint_requested = pyqtSignal(str)    # 웨이포인트 자동 주행 (이름)
     estop_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setProperty("class", "Panel")
         self.setFixedWidth(280)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
 
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(20, 20, 20, 20)
+        outer_layout.setSpacing(15)
+
+        # 타이틀
         title = QLabel("FRICTIONLESS\nCOMMAND")
-        title.setStyleSheet("color: #FFFFFF; font-size: 22px; font-weight: 900; letter-spacing: 1px;")
-        layout.addWidget(title)
+        title.setStyleSheet(
+            "color: #FFFFFF; font-size: 22px; font-weight: 900; letter-spacing: 1px;")
+        outer_layout.addWidget(title)
 
+        # 상태 표시
         self.status_label = QLabel("STANDBY")
         self.status_label.setProperty("class", "Status")
         self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
+        outer_layout.addWidget(self.status_label)
 
-        layout.addSpacing(20)
+        outer_layout.addSpacing(10)
 
+        # ── SYSTEM CONTROL ──
         lbl_sys = QLabel("SYSTEM CONTROL")
         lbl_sys.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
-        layout.addWidget(lbl_sys)
+        outer_layout.addWidget(lbl_sys)
 
         btn_launch = QPushButton("SYSTEM LAUNCH")
         btn_launch.setProperty("class", "LaunchBtn")
         btn_launch.clicked.connect(self.launch_requested.emit)
-        layout.addWidget(btn_launch)
+        outer_layout.addWidget(btn_launch)
 
-        layout.addSpacing(10)
+        outer_layout.addSpacing(5)
 
-        lbl_mis = QLabel("MISSION CONTROL")
-        lbl_mis.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
-        layout.addWidget(lbl_mis)
+        # ── 사람 추종 ──
+        lbl_follow = QLabel("FOLLOW MODE")
+        lbl_follow.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
+        outer_layout.addWidget(lbl_follow)
 
-        btn_follow = QPushButton("사람 유동 추종")
-        btn_follow.setProperty("class", "MissionBtn")
-        btn_follow.clicked.connect(lambda: self.mission_requested.emit("FOLLOW", "사람 추종"))
-        layout.addWidget(btn_follow)
+        btn_follow_start = QPushButton("사람 추종 시작")
+        btn_follow_start.setProperty("class", "MissionBtn")
+        btn_follow_start.clicked.connect(self.follow_requested.emit)
+        outer_layout.addWidget(btn_follow_start)
 
-        btn_guide_a = QPushButton("A구역 안내")
-        btn_guide_a.setProperty("class", "MissionBtn")
-        btn_guide_a.clicked.connect(lambda: self.mission_requested.emit("GUIDE_A", "A구역 안내"))
-        layout.addWidget(btn_guide_a)
+        btn_follow_stop = QPushButton("사람 추종 정지")
+        btn_follow_stop.setProperty("class", "MissionBtn")
+        btn_follow_stop.clicked.connect(self.stop_follow_requested.emit)
+        outer_layout.addWidget(btn_follow_stop)
 
-        btn_guide_b = QPushButton("B구역 안내")
-        btn_guide_b.setProperty("class", "MissionBtn")
-        btn_guide_b.clicked.connect(lambda: self.mission_requested.emit("GUIDE_B", "B구역 안내"))
-        layout.addWidget(btn_guide_b)
+        outer_layout.addSpacing(5)
 
-        btn_return = QPushButton("복귀 및 도킹")
-        btn_return.setProperty("class", "MissionBtn")
-        btn_return.clicked.connect(lambda: self.mission_requested.emit("RETURN", "복귀 및 주차"))
-        layout.addWidget(btn_return)
+        # ── 자동 주행 (웨이포인트 동적 버튼) ──
+        lbl_nav = QLabel("AUTO NAVIGATION")
+        lbl_nav.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
+        outer_layout.addWidget(lbl_nav)
 
-        layout.addStretch()
+        # 스크롤 영역 (웨이포인트가 많아지면 스크롤)
+        self.wp_scroll = QScrollArea()
+        self.wp_scroll.setWidgetResizable(True)
+        self.wp_scroll.setStyleSheet("background-color: transparent; border: none;")
+        self.wp_container = QWidget()
+        self.wp_layout = QVBoxLayout(self.wp_container)
+        self.wp_layout.setContentsMargins(0, 0, 0, 0)
+        self.wp_layout.setSpacing(8)
+        self.wp_scroll.setWidget(self.wp_container)
+        outer_layout.addWidget(self.wp_scroll, stretch=1)
 
+        # 안내 라벨 (웨이포인트 없을 때)
+        self.empty_label = QLabel("맵에서 좌클릭으로\n웨이포인트를 추가하세요")
+        self.empty_label.setStyleSheet(
+            "color: #555; font-size: 11px; padding: 10px; text-align: center;")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.wp_layout.addWidget(self.empty_label)
+
+        # ── EMERGENCY STOP ──
         btn_estop = QPushButton("EMERGENCY STOP")
         btn_estop.setObjectName("EStopBtn")
         btn_estop.clicked.connect(self.estop_requested.emit)
-        layout.addWidget(btn_estop)
+        outer_layout.addWidget(btn_estop)
 
     def update_status(self, text, color):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color: {color};")
 
+    def refresh_waypoints(self, waypoint_names):
+        """웨이포인트 목록 변경 시 동적으로 버튼 재생성"""
+        # 기존 버튼들 제거
+        while self.wp_layout.count():
+            item = self.wp_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not waypoint_names:
+            self.empty_label = QLabel("맵에서 좌클릭으로\n웨이포인트를 추가하세요")
+            self.empty_label.setStyleSheet(
+                "color: #555; font-size: 11px; padding: 10px; text-align: center;")
+            self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.wp_layout.addWidget(self.empty_label)
+            return
+
+        # 웨이포인트별 버튼 동적 생성
+        for name in waypoint_names:
+            btn = QPushButton(name)
+            btn.setProperty("class", "MissionBtn")
+            btn.clicked.connect(lambda checked, n=name: self.waypoint_requested.emit(n))
+            self.wp_layout.addWidget(btn)
+        self.wp_layout.addStretch()
+
 
 # =====================================================================
-# [3] 메인 윈도우: 시스템 통합
+# [4] 메인 윈도우
 # =====================================================================
 class FrictionlessStoreGUI(QMainWindow):
     def __init__(self, yaml_path, robot_ip, robot_user, robot_pw, workspace_path):
         super().__init__()
-        self.setWindowTitle("Project Frictionless Store 2026 - SCOUT COMMAND CENTER")
+        self.setWindowTitle("Smart Cart - Frictionless Store Command Center")
         self.resize(1600, 900)
         self.setup_stylesheet()
 
@@ -339,10 +459,7 @@ class FrictionlessStoreGUI(QMainWindow):
 
         self.ros_manager = RosManager(robot_ip)
         self.sidebar_panel = SidebarPanel()
-
-        # 💡 독립된 대화형 맵 에디터 패널 연동!
         self.map_panel = InteractiveMapPanel(yaml_path)
-
         self.log_panel = LogPanel()
         self.cam1_panel = MainCameraPanel()
         self.cam2_panel = BasketCameraPanel()
@@ -350,7 +467,10 @@ class FrictionlessStoreGUI(QMainWindow):
         self.build_layout()
         self.connect_signals()
 
-        self.log_panel.append_log("SYSTEM BOOT SEQUENCE INITIATED.")
+        # 초기 웨이포인트 버튼 표시
+        self.sidebar_panel.refresh_waypoints(self.map_panel.wp_db.get_all_names())
+
+        self.log_panel.append_log("SYSTEM BOOT.")
         self.ros_manager.connect_to_robot()
 
     def build_layout(self):
@@ -367,7 +487,6 @@ class FrictionlessStoreGUI(QMainWindow):
 
         top_vision = QHBoxLayout()
         top_vision.setSpacing(20)
-
         top_vision.addWidget(self.map_panel, stretch=6)
 
         cam_col = QVBoxLayout()
@@ -382,29 +501,84 @@ class FrictionlessStoreGUI(QMainWindow):
         main_layout.addLayout(vision_layout, stretch=1)
 
     def connect_signals(self):
+        # 맵 패널 → 로그
         self.map_panel.log_event.connect(self.log_panel.append_log)
-        self.ros_manager.log_signal.connect(self.log_panel.append_log)
+        # 웨이포인트 추가/삭제 → 사이드바 버튼 갱신
+        self.map_panel.waypoints_changed.connect(
+            lambda: self.sidebar_panel.refresh_waypoints(self.map_panel.wp_db.get_all_names()))
 
+        # ROS 신호 → UI
+        self.ros_manager.log_signal.connect(self.log_panel.append_log)
         self.ros_manager.pose_signal.connect(self.map_panel.update_pose)
         self.ros_manager.status_signal.connect(self.update_status_ui)
         self.ros_manager.camera1_signal.connect(self.cam1_panel.update_view)
         self.ros_manager.camera2_signal.connect(self.cam2_panel.update_view)
 
+        # 사이드바 버튼
         self.sidebar_panel.launch_requested.connect(self.handle_remote_launch)
-        self.sidebar_panel.mission_requested.connect(self.handle_mission)
+        self.sidebar_panel.follow_requested.connect(self.handle_follow_start)
+        self.sidebar_panel.stop_follow_requested.connect(self.handle_follow_stop)
+        self.sidebar_panel.waypoint_requested.connect(self.handle_waypoint_nav)
         self.sidebar_panel.estop_requested.connect(self.handle_estop)
 
     def handle_remote_launch(self):
-        launch_cmd = (f"bash -c 'source /opt/ros/humble/setup.bash && "
-                      f"source {self.workspace_path}/install/setup.bash && "
-                      f"nohup ros2 launch sc_bringup robot.launch.py > ~/gui_launch.log 2>&1 &'")
+        """터틀봇 라즈베리파이에 SSH로 ros2 launch 실행"""
+        launch_cmd = (
+            f"bash -c 'source /opt/ros/humble/setup.bash && "
+            f"source {self.workspace_path}/install/setup.bash && "
+            f"nohup ros2 launch sc_bringup robot.launch.py > ~/gui_launch.log 2>&1 &'")
 
-        self.ssh_worker = SshWorker(self.robot_ip, self.robot_user, self.robot_pw, launch_cmd)
+        self.ssh_worker = SshWorker(
+            self.robot_ip, self.robot_user, self.robot_pw, launch_cmd)
         self.ssh_worker.log_signal.connect(self.log_panel.append_log)
         self.ssh_worker.start()
-        self.log_panel.append_log("[INFO] ROS2 노드 부팅에 5~10초가 소요됩니다.")
+        self.log_panel.append_log("[INFO] ROS2 노드 부팅에 5~10초 소요됩니다.")
 
-    def handle_mission(self, mission_id, mission_name):
+    def handle_follow_start(self):
+        """사람 추종 모드 시작"""
+        if not self._check_ros_connection():
+            return
+        self.current_mission = "FOLLOW"
+        self.ros_manager.send_mode('follow')
+        self.log_panel.append_log("> [모드] 사람 추종 시작")
+        self.update_status_ui()
+
+    def handle_follow_stop(self):
+        """사람 추종 정지"""
+        if not self._check_ros_connection():
+            return
+        self.current_mission = "IDLE"
+        self.ros_manager.send_mode('idle')
+        self.log_panel.append_log("> [모드] 사람 추종 정지")
+        self.update_status_ui()
+
+    def handle_waypoint_nav(self, waypoint_name):
+        """웨이포인트로 자동 주행"""
+        if not self._check_ros_connection():
+            return
+
+        wp = self.map_panel.wp_db.get_waypoint(waypoint_name)
+        if not wp:
+            self.log_panel.append_log(f"> [ERROR] 웨이포인트 없음: {waypoint_name}")
+            return
+
+        self.current_mission = f"NAV_{waypoint_name}"
+        self.log_panel.append_log(f"> [자동 주행] '{waypoint_name}'으로 이동")
+        success = self.ros_manager.send_nav_goal(wp['x'], wp['y'])
+        if not success:
+            self.log_panel.append_log("> [ERROR] Nav2 send_goal 실패")
+        self.update_status_ui()
+
+    def handle_estop(self):
+        if not self._check_ros_connection():
+            return
+        self.current_mission = "ESTOP"
+        self.log_panel.append_log("[CRITICAL] EMERGENCY STOP")
+        self.ros_manager.send_estop()
+        self.update_status_ui()
+
+    def _check_ros_connection(self):
+        """ROS 연결 확인 + 안 됐으면 재연결 시도"""
         if not self.ros_manager.ros or not self.ros_manager.ros.is_connected:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("경고")
@@ -412,27 +586,9 @@ class FrictionlessStoreGUI(QMainWindow):
             msg_box.setIcon(QMessageBox.Icon.Warning)
             msg_box.addButton("확인", QMessageBox.ButtonRole.AcceptRole)
             msg_box.exec()
-
             self.ros_manager.connect_to_robot()
-            return
-
-        self.current_mission = mission_id
-        self.log_panel.append_log(f"COMMAND TRANSMITTED: EXECUTE MISSION [{mission_name}]")
-        self.ros_manager.send_mission(mission_id)
-
-        # 💡 향후 Nav2 연동을 위한 좌표 로드 로직 준비 (출력만 수행)
-        wp_coords = self.map_panel.wp_db.get_waypoint(mission_name)
-        if wp_coords:
-            self.log_panel.append_log(f"> [NAV2 대기] 목적지 좌표 로드 완료: X:{wp_coords['x']:.2f}, Y:{wp_coords['y']:.2f}")
-
-        self.update_status_ui()
-
-    def handle_estop(self):
-        if self.ros_manager.ros and self.ros_manager.ros.is_connected:
-            self.current_mission = "ESTOP"
-            self.log_panel.append_log("[CRITICAL] EMERGENCY STOP INITIATED.")
-            self.ros_manager.send_estop()
-            self.update_status_ui()
+            return False
+        return True
 
     def update_status_ui(self):
         move_str = "[IN MOTION]" if self.ros_manager.is_moving else "[STANDBY]"
@@ -441,13 +597,10 @@ class FrictionlessStoreGUI(QMainWindow):
         if self.current_mission == "ESTOP":
             text, color = "E-STOP ENGAGED\nMOTORS LOCKED", "#FF3366"
         elif self.current_mission == "FOLLOW":
-            text = f"TRACKING TARGET\n{move_str}"
-        elif self.current_mission == "GUIDE_A":
-            text = f"NAVIGATING: ZONE A\n{move_str}"
-        elif self.current_mission == "GUIDE_B":
-            text = f"NAVIGATING: ZONE B\n{move_str}"
-        elif self.current_mission == "RETURN":
-            text = "RTB (RETURN TO BASE)" if self.ros_manager.is_moving else "ARUCO DOCKING..."
+            text = f"사람 추종 중\n{move_str}"
+        elif self.current_mission.startswith("NAV_"):
+            wp_name = self.current_mission[4:]
+            text = f"자동 주행: {wp_name}\n{move_str}"
             color = "#FFCC00"
         else:
             text = "SYSTEM STANDBY\nREADY FOR COMMAND"
@@ -455,94 +608,52 @@ class FrictionlessStoreGUI(QMainWindow):
         self.sidebar_panel.update_status(text, color)
 
     def closeEvent(self, event):
-        self.log_panel.append_log("SHUTDOWN SEQUENCE INITIATED.")
+        self.log_panel.append_log("SHUTDOWN.")
         self.ros_manager.disconnect()
         event.accept()
 
     def setup_stylesheet(self):
         self.setStyleSheet("""
             QMainWindow { background-color: #0A0A0C; }
-
-            QFrame.Panel { 
-                background-color: #121214; 
-                border-radius: 12px; 
-            }
-
+            QFrame.Panel { background-color: #121214; border-radius: 12px; }
             QLabel { color: #D0D0D0; font-family: 'Malgun Gothic', sans-serif; }
-            QLabel.Title { 
-                color: #888888; 
-                font-weight: bold; 
-                font-size: 11px; 
-                padding: 12px 15px; 
-                letter-spacing: 1px; 
+            QLabel.Title {
+                color: #888888; font-weight: bold; font-size: 11px;
+                padding: 12px 15px; letter-spacing: 1px;
                 background-color: transparent;
             }
-            QLabel.Status { font-weight: bold; font-size: 15px; letter-spacing: 1px;}
-
-            QTextEdit.Terminal { 
-                background-color: transparent; 
-                border: none; 
-                color: #00E5FF; 
-                font-family: 'Consolas', monospace; 
-                font-size: 13px; 
+            QLabel.Status { font-weight: bold; font-size: 15px; letter-spacing: 1px; }
+            QTextEdit.Terminal {
+                background-color: transparent; border: none; color: #00E5FF;
+                font-family: 'Consolas', monospace; font-size: 13px;
                 padding: 0px 15px 15px 15px;
             }
-
             QPushButton {
-                font-family: 'Malgun Gothic';
-                border-radius: 6px;
-                padding: 14px;
-                font-size: 13px;
-                font-weight: bold;
-                letter-spacing: 1px;
+                font-family: 'Malgun Gothic'; border-radius: 6px;
+                padding: 12px; font-size: 13px; font-weight: bold; letter-spacing: 1px;
             }
-
-            QPushButton.MissionBtn { 
-                background-color: #1A1A1E; 
-                color: #D0D0D0; 
-                border: 1px solid #2A2A2E; 
-                text-align: left;
-                padding-left: 20px;
+            QPushButton.MissionBtn {
+                background-color: #1A1A1E; color: #D0D0D0;
+                border: 1px solid #2A2A2E; text-align: left; padding-left: 20px;
             }
             QPushButton.MissionBtn:hover { background-color: #2A2A2E; color: #FFFFFF; }
             QPushButton.MissionBtn:pressed { background-color: #00E5FF; color: #000000; }
-
-            QPushButton.LaunchBtn { 
-                background-color: #004455; 
-                color: #00E5FF; 
-                border: none;
+            QPushButton.LaunchBtn {
+                background-color: #004455; color: #00E5FF; border: none;
             }
             QPushButton.LaunchBtn:hover { background-color: #006677; color: #FFFFFF; }
             QPushButton.LaunchBtn:pressed { background-color: #008899; }
-
-            QPushButton#EStopBtn { 
-                background-color: #330A0A; 
-                color: #FF3366; 
-                border: 1px solid #FF3366; 
+            QPushButton#EStopBtn {
+                background-color: #330A0A; color: #FF3366; border: 1px solid #FF3366;
             }
             QPushButton#EStopBtn:hover { background-color: #FF3366; color: #FFFFFF; }
-
-            QMessageBox {
-                background-color: #121214;
-            }
-            QMessageBox QLabel {
-                color: #E0E0E0;
-                font-size: 14px;
-                background-color: transparent;
-            }
+            QMessageBox { background-color: #121214; }
+            QMessageBox QLabel { color: #E0E0E0; font-size: 14px; background-color: transparent; }
             QMessageBox QPushButton {
-                background-color: #2A2A2E;
-                color: #FFFFFF;
-                border: 1px solid #444;
-                min-width: 80px;
-                padding: 8px 16px;
+                background-color: #2A2A2E; color: #FFFFFF; border: 1px solid #444;
+                min-width: 80px; padding: 8px 16px;
             }
-            QMessageBox QPushButton:hover {
-                background-color: #3A3A3E;
-            }
-            QMessageBox QPushButton:pressed {
-                background-color: #00E5FF;
-                color: #000000;
-            }
+            QMessageBox QPushButton:hover { background-color: #3A3A3E; }
+            QMessageBox QPushButton:pressed { background-color: #00E5FF; color: #000000; }
+            QScrollArea { background-color: transparent; border: none; }
         """)
-
