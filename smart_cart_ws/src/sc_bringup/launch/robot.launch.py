@@ -73,29 +73,7 @@ def generate_launch_description():
     run_gui = LaunchConfiguration('run_gui')
     map_yaml_file = LaunchConfiguration('map')
 
-    # ════════════════════════════════════════════════════════
-    # 1. USB 웹캠 2대 (사람 추종 + 물체 인식)
-    # ════════════════════════════════════════════════════════
-    webcam1_node = Node(
-        package='v4l2_camera',
-        executable='v4l2_camera_node',
-        name='webcam',
-        parameters=[PathJoinSubstitution([config, 'webcam_params.yaml'])],
-        remappings=[('/image_raw', '/webcam/image_raw'),
-                    ('/image_raw/compressed', '/webcam/image_raw/compressed')],
-        output='screen',
-    )
-
-    webcam2_node = Node(
-        package='v4l2_camera',
-        executable='v4l2_camera_node',
-        name='webcam2',
-        parameters=[PathJoinSubstitution([config, 'webcam_params.yaml'])],
-        remappings=[('/image_raw', '/webcam2/image_raw'),
-                    ('/image_raw/compressed', '/webcam2/image_raw/compressed')],
-        output='screen',
-    )
-
+    
     # ════════════════════════════════════════════════════════
     # 2. C++ 노드 (제어 + 안전)
     # ════════════════════════════════════════════════════════
