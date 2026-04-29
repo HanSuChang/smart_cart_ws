@@ -28,3 +28,6 @@ pan_tilt_controller:
     # 카메라 해상도 (bbox 중심 계산용)
     image_width: 640
     image_height: 480
+
+    # ServoControl.speed (0.0~1.0)
+    command_speed: 1.0

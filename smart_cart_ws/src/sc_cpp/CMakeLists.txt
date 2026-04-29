@@ -104,20 +104,6 @@ rclcpp_components_register_node(status_publisher_component
   EXECUTABLE status_publisher
 )
 
-# ObstacleAvoidance
-add_library(obstacle_avoidance_component SHARED
-  src/obstacle_avoidance.cpp
-)
-target_include_directories(obstacle_avoidance_component PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-ament_target_dependencies(obstacle_avoidance_component ${DEPS})
-rclcpp_components_register_node(obstacle_avoidance_component
-  PLUGIN "sc_cpp::ObstacleAvoidance"
-  EXECUTABLE obstacle_avoidance
-)
-
 # ── Install ──
 install(TARGETS
   kalman_filter
@@ -126,7 +112,6 @@ install(TARGETS
   lid_controller_component
   pan_tilt_controller_component
   status_publisher_component
-  obstacle_avoidance_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
