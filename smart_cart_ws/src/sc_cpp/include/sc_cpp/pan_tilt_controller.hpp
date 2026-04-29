@@ -31,7 +31,6 @@ private:
   double current_tilt_ = 90.0;
 
   // 실시간 튜닝을 위한 파라미터 변수
-  double pan_kp_, tilt_kp_;
   int center_x_ref_, center_y_ref_;
   double pan_kp_;
   double tilt_kp_;
