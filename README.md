@@ -112,16 +112,6 @@ ros2 param set /controller_server general_goal_checker.yaw_goal_tolerance 0.1
 터틀봇 접속 후
 
 
-(기본 노드 실행 후)
-
-ros2 run v4l2_camera v4l2_camera_node --ros-args \
-  -p video_device:=/dev/video1 \
-  -p image_size:=[640,480] \
-  -p pixel_format:=YUYV \
-  -r __node:=webcam \
-  -r /image_raw:=/webcam/image_raw \
-  -r /image_raw/compressed:=/webcam/image_raw/compressed
-
 
   
 
@@ -135,11 +125,15 @@ ssh song@192.168.0.222
 (사람 추종 캠)
 ros2 run v4l2_camera v4l2_camera_node --ros-args \
   -p video_device:=/dev/video3 \
-  -p image_size:=[640,480] \
   -p pixel_format:=YUYV \
+  -p image_size:=[320,240] \
+  -p output_encoding:=yuv422_yuy2 \
   -r __node:=webcam \
   -r /image_raw:=/webcam/image_raw \
-  -r /image_raw/compressed:=/webcam/image_raw/compressed
+  -r /image_raw/compressed:=/webcam/image_raw/compressed \
+  -r /image_raw/compressedDepth:=/webcam/image_raw/compressedDepth \
+  -r /image_raw/theora:=/webcam/image_raw/theora \
+  -r /camera_info:=/webcam/camera_info
 
 
 
@@ -148,11 +142,15 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
 (물체인식 캠)
 ros2 run v4l2_camera v4l2_camera_node --ros-args \
   -p video_device:=/dev/video0 \
-  -p image_size:=[640,480] \
   -p pixel_format:=YUYV \
+  -p image_size:=[320,240] \
+  -p output_encoding:=yuv422_yuy2 \
   -r __node:=webcam2 \
   -r /image_raw:=/webcam2/image_raw \
-  -r /image_raw/compressed:=/webcam2/image_raw/compressed
+  -r /image_raw/compressed:=/webcam2/image_raw/compressed \
+  -r /image_raw/compressedDepth:=/webcam2/image_raw/compressedDepth \
+  -r /image_raw/theora:=/webcam2/image_raw/theora \
+  -r /camera_info:=/webcam2/camera_info
 
 터미널에  rviz2 키기
 
