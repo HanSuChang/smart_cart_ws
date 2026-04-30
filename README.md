@@ -122,35 +122,43 @@ ssh song@192.168.0.222
 
 
 
-(사람 추종 캠)
-ros2 run v4l2_camera v4l2_camera_node --ros-args \
-  -p video_device:=/dev/video3 \
-  -p pixel_format:=YUYV \
-  -p image_size:=[320,240] \
-  -p output_encoding:=yuv422_yuy2 \
-  -r __node:=webcam \
-  -r /image_raw:=/webcam/image_raw \
-  -r /image_raw/compressed:=/webcam/image_raw/compressed \
-  -r /image_raw/compressedDepth:=/webcam/image_raw/compressedDepth \
-  -r /image_raw/theora:=/webcam/image_raw/theora \
-  -r /camera_info:=/webcam/camera_info
-
-
-
-
-
-(물체인식 캠)
-ros2 run v4l2_camera v4l2_camera_node --ros-args \
+(사람 추종 캠) 0번
+ros2 run usb_cam usb_cam_node_exe --ros-args \
   -p video_device:=/dev/video0 \
-  -p pixel_format:=YUYV \
-  -p image_size:=[320,240] \
-  -p output_encoding:=yuv422_yuy2 \
+  -p pixel_format:=mjpeg2rgb \
+  -p image_width:=320 \
+  -p image_height:=240 \
+  -p framerate:=15.0 \
+  -p camera_name:=webcam2 \
+  -p frame_id:=webcam2 \
+  -p io_method:=mmap \
   -r __node:=webcam2 \
   -r /image_raw:=/webcam2/image_raw \
   -r /image_raw/compressed:=/webcam2/image_raw/compressed \
   -r /image_raw/compressedDepth:=/webcam2/image_raw/compressedDepth \
   -r /image_raw/theora:=/webcam2/image_raw/theora \
   -r /camera_info:=/webcam2/camera_info
+
+
+
+
+
+(물체인식 캠) 3번
+ros2 run usb_cam usb_cam_node_exe --ros-args \
+  -p video_device:=/dev/video3 \
+  -p pixel_format:=mjpeg2rgb \
+  -p image_width:=320 \
+  -p image_height:=240 \
+  -p framerate:=15.0 \
+  -p camera_name:=webcam \
+  -p frame_id:=webcam \
+  -p io_method:=mmap \
+  -r __node:=webcam \
+  -r /image_raw:=/webcam/image_raw \
+  -r /image_raw/compressed:=/webcam/image_raw/compressed \
+  -r /image_raw/compressedDepth:=/webcam/image_raw/compressedDepth \
+  -r /image_raw/theora:=/webcam/image_raw/theora \
+  -r /camera_info:=/webcam/camera_info
 
 터미널에  rviz2 키기
 
