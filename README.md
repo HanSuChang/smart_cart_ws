@@ -113,12 +113,15 @@ ros2 param set /controller_server general_goal_checker.yaw_goal_tolerance 0.1
 
 
 (기본 노드 실행 후)
+
 ros2 run v4l2_camera v4l2_camera_node --ros-args \
-  -p video_device:=/dev/video0 \
+  -p video_device:=/dev/video1 \
   -p image_size:=[640,480] \
   -p pixel_format:=YUYV \
+  -r __node:=webcam \
   -r /image_raw:=/webcam/image_raw \
   -r /image_raw/compressed:=/webcam/image_raw/compressed
+
 
   
 
