@@ -1,13 +1,13 @@
 webcam:
   ros__parameters:
-    video_device: "/dev/video1"     # ★ video0 → video1
+    video_device: "/dev/video1"
     image_size: [640, 480]
-    pixel_format: "YUYV"            # ★ mjpeg → YUYV (안전한 기본값)
+    pixel_format: "YUYV"
     camera_frame_id: "webcam_link"
 
 webcam2:
   ros__parameters:
-    video_device: "/dev/video3"     # ★ video2 → video3
+    video_device: "/dev/video3"
     image_size: [640, 480]
     pixel_format: "YUYV"
     camera_frame_id: "webcam2_link"

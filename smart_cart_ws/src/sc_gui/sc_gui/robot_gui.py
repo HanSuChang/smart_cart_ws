@@ -8,6 +8,7 @@
 #   3. 저장된 웨이포인트로 Nav2 자동 주행 (send_goal)
 #   4. USB 웹캠 2대 실시간 표시
 #   5. 비상 정지
+#   6. ★ HSV 학습 시작 / 저장 / 초기화
 # =====================================================================
 
 import sys
@@ -31,7 +32,7 @@ except ImportError:
 
 
 # =====================================================================
-# [0] 원격 런치 매니저: SSH로 터틀봇에 launch 명령 전송
+# [0] 원격 런치 매니저
 # =====================================================================
 class SshWorker(QThread):
     log_signal = pyqtSignal(str)
@@ -50,7 +51,6 @@ class SshWorker(QThread):
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(self.ip, username=self.username, password=self.password, timeout=5)
             self.log_signal.emit("> [SSH] ACCESS GRANTED. EXECUTING LAUNCH...")
-
             stdin, stdout, stderr = ssh.exec_command(self.command)
             err = stderr.read().decode().strip()
             if err and "command not found" in err.lower():
@@ -63,7 +63,7 @@ class SshWorker(QThread):
 
 
 # =====================================================================
-# [1] ROS Manager: rosbridge_websocket 통신 + Nav2 send_goal
+# [1] ROS Manager
 # =====================================================================
 class RosManager(QObject):
     pose_signal = pyqtSignal(float, float)
@@ -71,6 +71,7 @@ class RosManager(QObject):
     log_signal = pyqtSignal(str)
     camera1_signal = pyqtSignal(bytes)
     camera2_signal = pyqtSignal(bytes)
+    learn_status_signal = pyqtSignal(str)  # ★ 학습 상태
 
     def __init__(self, ip_address):
         super().__init__()
@@ -88,55 +89,59 @@ class RosManager(QObject):
                 self.log_signal.emit("> CONNECTED. TELEMETRY ACTIVE.")
                 self.status_signal.emit("UPDATE")
 
-                # ── /odom (터틀봇 위치) ──
                 self.odom_listener = roslibpy.Topic(
                     self.ros, '/odom', 'nav_msgs/Odometry')
                 self.odom_listener.subscribe(self.odom_callback)
 
-                # ── /cmd_vel (이동 중 여부 감지) ──
                 self.cmd_vel_listener = roslibpy.Topic(
                     self.ros, '/cmd_vel', 'geometry_msgs/Twist')
                 self.cmd_vel_listener.subscribe(self.cmd_vel_callback)
 
-                # ── 웹캠 1번 (사람 추종용) ──
                 self.cam1_listener = roslibpy.Topic(
                     self.ros, '/webcam/image_raw/compressed',
                     'sensor_msgs/CompressedImage')
                 self.cam1_listener.subscribe(self.camera1_callback)
 
-                # ── 웹캠 2번 (물체 인식용) ──
                 self.cam2_listener = roslibpy.Topic(
                     self.ros, '/webcam2/image_raw/compressed',
                     'sensor_msgs/CompressedImage')
                 self.cam2_listener.subscribe(self.camera2_callback)
 
-                # ── /item_detected ──
                 self.item_listener = roslibpy.Topic(
                     self.ros, '/item_detected', 'sc_interfaces/ItemDetected')
                 self.item_listener.subscribe(self.item_callback)
+
+                # ★ 학습 상태 구독
+                self.learn_status_listener = roslibpy.Topic(
+                    self.ros, '/smart_cart/learn_status', 'std_msgs/String')
+                self.learn_status_listener.subscribe(self.learn_status_callback)
             else:
-                self.log_signal.emit("> [WARNING] WS REFUSED. (Launch가 아직 실행 안 됐을 수 있음)")
+                self.log_signal.emit("> [WARNING] WS REFUSED.")
         except Exception as e:
             self.log_signal.emit(f"> [ERROR] NETWORK FAILURE: {e}")
 
     def send_mode(self, mode):
         if self.ros and self.ros.is_connected:
-            topic = roslibpy.Topic(
-                self.ros, '/smart_cart/mode', 'std_msgs/String')
+            topic = roslibpy.Topic(self.ros, '/smart_cart/mode', 'std_msgs/String')
             topic.publish(roslibpy.Message({'data': mode}))
             topic.unadvertise()
             self.log_signal.emit(f"> MODE CHANGED → [{mode.upper()}]")
+
+    def send_learn_command(self, cmd):
+        """★ HSV 학습 명령: start / save / load / reset"""
+        if self.ros and self.ros.is_connected:
+            topic = roslibpy.Topic(self.ros, '/smart_cart/learn', 'std_msgs/String')
+            topic.publish(roslibpy.Message({'data': cmd}))
+            topic.unadvertise()
+            self.log_signal.emit(f"> [LEARN] {cmd.upper()}")
 
     def send_nav_goal(self, x, y):
         if not self.ros or not self.ros.is_connected:
             self.log_signal.emit("> [ERROR] ROS 연결 안 됨")
             return False
-
         self.send_mode('navigate')
-
         action_client = roslibpy.actionlib.ActionClient(
             self.ros, '/navigate_to_pose', 'nav2_msgs/NavigateToPose')
-
         goal_msg = {
             'pose': {
                 'header': {'frame_id': 'map'},
@@ -146,7 +151,6 @@ class RosManager(QObject):
                 }
             }
         }
-
         goal = roslibpy.actionlib.Goal(action_client, roslibpy.Message(goal_msg))
         goal.on('result', lambda r: self.log_signal.emit("> [NAV2] 목적지 도착!"))
         goal.on('feedback', lambda f: None)
@@ -164,12 +168,13 @@ class RosManager(QObject):
     def disconnect(self):
         if self.ros and self.ros.is_connected:
             for attr in ['odom_listener', 'cmd_vel_listener',
-                         'cam1_listener', 'cam2_listener', 'item_listener']:
+                         'cam1_listener', 'cam2_listener', 'item_listener',
+                         'learn_status_listener']:
                 if hasattr(self, attr):
                     getattr(self, attr).unsubscribe()
             self.ros.terminate()
 
-    # ── 콜백 ──
+    # 콜백
     def odom_callback(self, message):
         try:
             x = message['pose']['pose']['position']['x']
@@ -215,9 +220,16 @@ class RosManager(QObject):
         except Exception as e:
             self.log_signal.emit(f"> [WEB 연동 오류] {e}")
 
+    def learn_status_callback(self, message):
+        """★ /smart_cart/learn_status 받으면 GUI에 전달"""
+        try:
+            self.learn_status_signal.emit(message.get('data', 'idle'))
+        except Exception:
+            pass
+
 
 # =====================================================================
-# [2] UI 컴포넌트
+# [2] UI 컴포넌트 (BasePanel, LogPanel, CameraPanel - 기존 그대로)
 # =====================================================================
 class BasePanel(QFrame):
     def __init__(self, title_text=""):
@@ -226,7 +238,6 @@ class BasePanel(QFrame):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
-
         if title_text:
             self.title_label = QLabel(title_text)
             self.title_label.setProperty("class", "Title")
@@ -244,12 +255,10 @@ class LogPanel(BasePanel):
     def append_log(self, text):
         time_str = QDateTime.currentDateTime().toString("HH:mm:ss")
         error_keywords = ["ERROR", "CRITICAL", "WARNING", "FATAL", "오류", "실패", "경고"]
-
         if any(keyword in text.upper() for keyword in error_keywords):
             formatted_text = f"<span style='color:#FF3366; font-weight:bold;'>{text}</span>"
         else:
             formatted_text = text
-
         self.log_window.append(f"<span style='color:#555;'>[{time_str}]</span> {formatted_text}")
         scrollbar = self.log_window.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
@@ -259,7 +268,6 @@ class CameraPanel(BasePanel):
     def __init__(self, title, default_text):
         super().__init__(title)
         self.camera_label = QLabel(default_text)
-        # PyQt5: Qt.AlignCenter 직접 사용
         self.camera_label.setAlignment(Qt.AlignCenter)
         self.camera_label.setStyleSheet(
             "background-color: transparent; color: #555555; font-weight: bold; font-size: 11px;")
@@ -268,26 +276,20 @@ class CameraPanel(BasePanel):
     def render_base_image(self, img_bytes):
         pixmap = QPixmap()
         pixmap.loadFromData(img_bytes)
-        # PyQt5: Qt.KeepAspectRatio, Qt.SmoothTransformation 직접 사용
         return pixmap.scaled(self.camera_label.size(),
-                             Qt.KeepAspectRatio,
-                             Qt.SmoothTransformation)
+                             Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
 
 class MainCameraPanel(CameraPanel):
-    """웹캠 1번 — 사람 추종용 (FPV + 조준점)"""
     def __init__(self):
         super().__init__(" 사람 추종 카메라", "NO SIGNAL /webcam/image_raw")
 
     def update_view(self, img_bytes):
         scaled_pixmap = self.render_base_image(img_bytes)
         painter = QPainter(scaled_pixmap)
-        # PyQt5: QPainter.Antialiasing 직접 사용
         painter.setRenderHint(QPainter.Antialiasing)
-
         w, h = scaled_pixmap.width(), scaled_pixmap.height()
         cx, cy = w // 2, h // 2
-
         painter.setPen(QPen(QColor(0, 229, 255, 150), 1))
         painter.drawEllipse(cx - 4, cy - 4, 8, 8)
         painter.drawLine(cx, cy - 20, cx, cy - 8)
@@ -299,7 +301,6 @@ class MainCameraPanel(CameraPanel):
 
 
 class BasketCameraPanel(CameraPanel):
-    """웹캠 2번 — 물체 인식용 (USB 웹캠)"""
     def __init__(self):
         super().__init__(" 물체 인식 카메라", "NO SIGNAL /webcam2/image_raw")
 
@@ -308,7 +309,7 @@ class BasketCameraPanel(CameraPanel):
 
 
 # =====================================================================
-# [3] 사이드바
+# [3] 사이드바 (학습 버튼 추가)
 # =====================================================================
 class SidebarPanel(QFrame):
     launch_requested = pyqtSignal()
@@ -316,6 +317,10 @@ class SidebarPanel(QFrame):
     stop_follow_requested = pyqtSignal()
     waypoint_requested = pyqtSignal(str)
     estop_requested = pyqtSignal()
+    # ★ 학습 시그널
+    learn_start_requested = pyqtSignal()
+    learn_save_requested = pyqtSignal()
+    learn_reset_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -324,7 +329,7 @@ class SidebarPanel(QFrame):
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(20, 20, 20, 20)
-        outer_layout.setSpacing(15)
+        outer_layout.setSpacing(12)
 
         title = QLabel("FRICTIONLESS\nCOMMAND")
         title.setStyleSheet(
@@ -336,7 +341,7 @@ class SidebarPanel(QFrame):
         self.status_label.setWordWrap(True)
         outer_layout.addWidget(self.status_label)
 
-        outer_layout.addSpacing(10)
+        outer_layout.addSpacing(5)
 
         # SYSTEM CONTROL
         lbl_sys = QLabel("SYSTEM CONTROL")
@@ -348,7 +353,40 @@ class SidebarPanel(QFrame):
         btn_launch.clicked.connect(self.launch_requested.emit)
         outer_layout.addWidget(btn_launch)
 
-        outer_layout.addSpacing(5)
+        outer_layout.addSpacing(3)
+
+        # ★ 학습 섹션
+        lbl_learn = QLabel("HSV 학습 (Re-ID)")
+        lbl_learn.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
+        outer_layout.addWidget(lbl_learn)
+
+        # 학습 상태 표시
+        self.learn_status_label = QLabel("학습 데이터 없음")
+        self.learn_status_label.setStyleSheet(
+            "color: #888; font-size: 12px; padding: 6px; "
+            "background-color: #1A1A1E; border-radius: 4px;")
+        outer_layout.addWidget(self.learn_status_label)
+
+        btn_learn_start = QPushButton("학습 시작 (20초)")
+        btn_learn_start.setProperty("class", "LearnBtn")
+        btn_learn_start.clicked.connect(self.learn_start_requested.emit)
+        outer_layout.addWidget(btn_learn_start)
+
+        # 저장/초기화 가로 배치
+        learn_btn_row = QHBoxLayout()
+        learn_btn_row.setSpacing(6)
+        btn_learn_save = QPushButton("저장")
+        btn_learn_save.setProperty("class", "MissionBtn")
+        btn_learn_save.clicked.connect(self.learn_save_requested.emit)
+        learn_btn_row.addWidget(btn_learn_save)
+
+        btn_learn_reset = QPushButton("초기화")
+        btn_learn_reset.setProperty("class", "MissionBtn")
+        btn_learn_reset.clicked.connect(self.learn_reset_requested.emit)
+        learn_btn_row.addWidget(btn_learn_reset)
+        outer_layout.addLayout(learn_btn_row)
+
+        outer_layout.addSpacing(3)
 
         # FOLLOW MODE
         lbl_follow = QLabel("FOLLOW MODE")
@@ -365,7 +403,7 @@ class SidebarPanel(QFrame):
         btn_follow_stop.clicked.connect(self.stop_follow_requested.emit)
         outer_layout.addWidget(btn_follow_stop)
 
-        outer_layout.addSpacing(5)
+        outer_layout.addSpacing(3)
 
         # AUTO NAVIGATION
         lbl_nav = QLabel("AUTO NAVIGATION")
@@ -378,7 +416,7 @@ class SidebarPanel(QFrame):
         self.wp_container = QWidget()
         self.wp_layout = QVBoxLayout(self.wp_container)
         self.wp_layout.setContentsMargins(0, 0, 0, 0)
-        self.wp_layout.setSpacing(8)
+        self.wp_layout.setSpacing(6)
         self.wp_scroll.setWidget(self.wp_container)
         outer_layout.addWidget(self.wp_scroll, stretch=1)
 
@@ -397,6 +435,25 @@ class SidebarPanel(QFrame):
     def update_status(self, text, color):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color: {color};")
+
+    def update_learn_status(self, status):
+        """★ /smart_cart/learn_status 받아서 표시"""
+        if status.startswith('learning:'):
+            remaining = status.split(':')[1]
+            self.learn_status_label.setText(f"⏱ 학습 중... {remaining}초 남음")
+            self.learn_status_label.setStyleSheet(
+                "color: #FFCC00; font-size: 12px; padding: 6px; "
+                "background-color: #2A2A1A; border-radius: 4px; font-weight: bold;")
+        elif status == 'ready':
+            self.learn_status_label.setText("✓ 학습 완료 (추종 가능)")
+            self.learn_status_label.setStyleSheet(
+                "color: #00E5FF; font-size: 12px; padding: 6px; "
+                "background-color: #1A2A2E; border-radius: 4px; font-weight: bold;")
+        else:
+            self.learn_status_label.setText("학습 데이터 없음")
+            self.learn_status_label.setStyleSheet(
+                "color: #888; font-size: 12px; padding: 6px; "
+                "background-color: #1A1A1E; border-radius: 4px;")
 
     def refresh_waypoints(self, waypoint_names):
         while self.wp_layout.count():
@@ -448,7 +505,6 @@ class FrictionlessStoreGUI(QMainWindow):
         self.connect_signals()
 
         self.sidebar_panel.refresh_waypoints(self.map_panel.wp_db.get_all_names())
-
         self.log_panel.append_log("SYSTEM BOOT.")
         self.ros_manager.connect_to_robot()
 
@@ -489,19 +545,24 @@ class FrictionlessStoreGUI(QMainWindow):
         self.ros_manager.status_signal.connect(self.update_status_ui)
         self.ros_manager.camera1_signal.connect(self.cam1_panel.update_view)
         self.ros_manager.camera2_signal.connect(self.cam2_panel.update_view)
+        # ★ 학습 상태
+        self.ros_manager.learn_status_signal.connect(self.sidebar_panel.update_learn_status)
 
         self.sidebar_panel.launch_requested.connect(self.handle_remote_launch)
         self.sidebar_panel.follow_requested.connect(self.handle_follow_start)
         self.sidebar_panel.stop_follow_requested.connect(self.handle_follow_stop)
         self.sidebar_panel.waypoint_requested.connect(self.handle_waypoint_nav)
         self.sidebar_panel.estop_requested.connect(self.handle_estop)
+        # ★ 학습 버튼 연결
+        self.sidebar_panel.learn_start_requested.connect(self.handle_learn_start)
+        self.sidebar_panel.learn_save_requested.connect(self.handle_learn_save)
+        self.sidebar_panel.learn_reset_requested.connect(self.handle_learn_reset)
 
     def handle_remote_launch(self):
         launch_cmd = (
             f"bash -c 'source /opt/ros/humble/setup.bash && "
             f"source {self.workspace_path}/install/setup.bash && "
             f"nohup ros2 launch sc_bringup robot.launch.py > ~/gui_launch.log 2>&1 &'")
-
         self.ssh_worker = SshWorker(
             self.robot_ip, self.robot_user, self.robot_pw, launch_cmd)
         self.ssh_worker.log_signal.connect(self.log_panel.append_log)
@@ -527,12 +588,10 @@ class FrictionlessStoreGUI(QMainWindow):
     def handle_waypoint_nav(self, waypoint_name):
         if not self._check_ros_connection():
             return
-
         wp = self.map_panel.wp_db.get_waypoint(waypoint_name)
         if not wp:
             self.log_panel.append_log(f"> [ERROR] 웨이포인트 없음: {waypoint_name}")
             return
-
         self.current_mission = f"NAV_{waypoint_name}"
         self.log_panel.append_log(f"> [자동 주행] '{waypoint_name}'으로 이동")
         success = self.ros_manager.send_nav_goal(wp['x'], wp['y'])
@@ -548,14 +607,36 @@ class FrictionlessStoreGUI(QMainWindow):
         self.ros_manager.send_estop()
         self.update_status_ui()
 
+    # ★ 학습 핸들러
+    def handle_learn_start(self):
+        if not self._check_ros_connection():
+            return
+        self.log_panel.append_log("> [LEARN] 20초 학습 시작 — 카메라 앞에서 움직여 주세요")
+        self.ros_manager.send_learn_command('start')
+
+    def handle_learn_save(self):
+        if not self._check_ros_connection():
+            return
+        self.ros_manager.send_learn_command('save')
+        self.log_panel.append_log("> [LEARN] 저장 명령 전송")
+
+    def handle_learn_reset(self):
+        if not self._check_ros_connection():
+            return
+        reply = QMessageBox.question(
+            self, "초기화 확인",
+            "학습 데이터를 초기화할까요?",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.ros_manager.send_learn_command('reset')
+            self.log_panel.append_log("> [LEARN] 초기화")
+
     def _check_ros_connection(self):
         if not self.ros_manager.ros or not self.ros_manager.ros.is_connected:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("경고")
             msg_box.setText("먼저 SYSTEM LAUNCH를 눌러 로봇을 가동하거나 통신을 점검하세요.")
-            # PyQt5: QMessageBox.Warning 직접 사용
             msg_box.setIcon(QMessageBox.Warning)
-            # PyQt5: AcceptRole 직접 사용
             msg_box.addButton("확인", QMessageBox.AcceptRole)
             msg_box.exec_()
             self.ros_manager.connect_to_robot()
@@ -565,7 +646,6 @@ class FrictionlessStoreGUI(QMainWindow):
     def update_status_ui(self):
         move_str = "[IN MOTION]" if self.ros_manager.is_moving else "[STANDBY]"
         color = "#00E5FF"
-
         if self.current_mission == "ESTOP":
             text, color = "E-STOP ENGAGED\nMOTORS LOCKED", "#FF3366"
         elif self.current_mission == "FOLLOW":
@@ -576,7 +656,6 @@ class FrictionlessStoreGUI(QMainWindow):
             color = "#FFCC00"
         else:
             text = "SYSTEM STANDBY\nREADY FOR COMMAND"
-
         self.sidebar_panel.update_status(text, color)
 
     def closeEvent(self, event):
@@ -602,11 +681,11 @@ class FrictionlessStoreGUI(QMainWindow):
             }
             QPushButton {
                 font-family: 'Malgun Gothic'; border-radius: 6px;
-                padding: 12px; font-size: 13px; font-weight: bold; letter-spacing: 1px;
+                padding: 10px; font-size: 12px; font-weight: bold; letter-spacing: 1px;
             }
             QPushButton.MissionBtn {
                 background-color: #1A1A1E; color: #D0D0D0;
-                border: 1px solid #2A2A2E; text-align: left; padding-left: 20px;
+                border: 1px solid #2A2A2E; text-align: left; padding-left: 15px;
             }
             QPushButton.MissionBtn:hover { background-color: #2A2A2E; color: #FFFFFF; }
             QPushButton.MissionBtn:pressed { background-color: #00E5FF; color: #000000; }
@@ -615,6 +694,10 @@ class FrictionlessStoreGUI(QMainWindow):
             }
             QPushButton.LaunchBtn:hover { background-color: #006677; color: #FFFFFF; }
             QPushButton.LaunchBtn:pressed { background-color: #008899; }
+            QPushButton.LearnBtn {
+                background-color: #553300; color: #FFCC00; border: 1px solid #FFCC00;
+            }
+            QPushButton.LearnBtn:hover { background-color: #FFCC00; color: #000; }
             QPushButton#EStopBtn {
                 background-color: #330A0A; color: #FF3366; border: 1px solid #FF3366;
             }
