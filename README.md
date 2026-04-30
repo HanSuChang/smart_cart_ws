@@ -110,15 +110,17 @@ ros2 param set /controller_server general_goal_checker.yaw_goal_tolerance 0.1
 
 ===============캠 띄우는 법=======================
 터틀봇 접속 후
-터미널에  rviz2 키기
 
 
-RViz 열리면:
+(기본 노드 실행 후)
+ros2 run v4l2_camera v4l2_camera_node --ros-args \
+  -p video_device:=/dev/video0 \
+  -p image_size:=[640,480] \
+  -p pixel_format:=YUYV \
+  -r /image_raw:=/webcam/image_raw \
+  -r /image_raw/compressed:=/webcam/image_raw/compressed
 
-Add → By topic
-/webcam/image_raw 선택
-Image 추가
-
+  
 
 
 ssh song@192.168.0.222
@@ -148,6 +150,16 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
   -r __node:=webcam2 \
   -r /image_raw:=/webcam2/image_raw \
   -r /image_raw/compressed:=/webcam2/image_raw/compressed
+
+터미널에  rviz2 키기
+
+
+RViz 열리면:
+
+Add → By topic
+/webcam/image_raw 선택
+Image 추가
+
 
 
 
