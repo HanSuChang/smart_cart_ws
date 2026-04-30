@@ -1,11 +1,11 @@
 # =====================================================================
 # main.py
-# Smart Cart GUI 진입점 — Flask 결제 서버 + PyQt6 관제 GUI 동시 실행
+# Smart Cart GUI 진입점 — Flask 결제 서버 + PyQt5 관제 GUI 동시 실행
 # =====================================================================
 
 import sys
 import threading
-from PyQt6.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication
 
 from sc_gui.cart_gui import SmartCartServer
 from sc_gui.robot_gui import FrictionlessStoreGUI
@@ -25,7 +25,7 @@ def main():
     flask_thread.start()
 
     # =========================================================
-    # [Step 2] 로봇 관제 GUI(PyQt6) 메인 스레드 실행
+    # [Step 2] 로봇 관제 GUI(PyQt5) 메인 스레드 실행
     # =========================================================
     app = QApplication(sys.argv)
 
@@ -45,7 +45,7 @@ def main():
     )
 
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == '__main__':

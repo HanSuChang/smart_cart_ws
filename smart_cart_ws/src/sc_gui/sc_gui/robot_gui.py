@@ -1,6 +1,6 @@
 # =====================================================================
 # robot_gui.py
-# Smart Cart 메인 관제 GUI (PyQt6)
+# Smart Cart 메인 관제 GUI (PyQt5)
 #
 # 기능:
 #   1. 맵 표시 + 웨이포인트(노드) 찍기/저장
@@ -14,12 +14,12 @@ import sys
 import base64
 import roslibpy
 import requests
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
     QMessageBox, QTextEdit, QFrame, QPushButton, QScrollArea
 )
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QDateTime, QThread
+from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QDateTime, QThread
 
 from sc_gui.waypoint_manager import InteractiveMapPanel
 
@@ -104,13 +104,13 @@ class RosManager(QObject):
                     'sensor_msgs/CompressedImage')
                 self.cam1_listener.subscribe(self.camera1_callback)
 
-                # ── 웹캠 2번 (물체 인식용) — USB 웹캠으로 변경 ──
+                # ── 웹캠 2번 (물체 인식용) ──
                 self.cam2_listener = roslibpy.Topic(
                     self.ros, '/webcam2/image_raw/compressed',
                     'sensor_msgs/CompressedImage')
                 self.cam2_listener.subscribe(self.camera2_callback)
 
-                # ── /item_detected (물체 인식 → Flask 결제 연동) ──
+                # ── /item_detected ──
                 self.item_listener = roslibpy.Topic(
                     self.ros, '/item_detected', 'sc_interfaces/ItemDetected')
                 self.item_listener.subscribe(self.item_callback)
@@ -119,12 +119,7 @@ class RosManager(QObject):
         except Exception as e:
             self.log_signal.emit(f"> [ERROR] NETWORK FAILURE: {e}")
 
-    # ── 사람 추종 / 정지 모드 전환 ──
     def send_mode(self, mode):
-        """
-        mode: 'follow' / 'navigate' / 'idle'
-        follow_controller가 이걸 구독해서 모드 전환
-        """
         if self.ros and self.ros.is_connected:
             topic = roslibpy.Topic(
                 self.ros, '/smart_cart/mode', 'std_msgs/String')
@@ -132,20 +127,13 @@ class RosManager(QObject):
             topic.unadvertise()
             self.log_signal.emit(f"> MODE CHANGED → [{mode.upper()}]")
 
-    # ── Nav2 자동 주행: 목표 좌표로 이동 ──
     def send_nav_goal(self, x, y):
-        """
-        Nav2 navigate_to_pose 액션에 send_goal
-        x, y: 목적지 실제 좌표 (m)
-        """
         if not self.ros or not self.ros.is_connected:
             self.log_signal.emit("> [ERROR] ROS 연결 안 됨")
             return False
 
-        # 먼저 navigate 모드로 전환 (follow_controller 정지)
         self.send_mode('navigate')
 
-        # Nav2 액션 클라이언트
         action_client = roslibpy.actionlib.ActionClient(
             self.ros, '/navigate_to_pose', 'nav2_msgs/NavigateToPose')
 
@@ -167,11 +155,8 @@ class RosManager(QObject):
         return True
 
     def send_estop(self):
-        """비상 정지 (사람 추종 + Nav2 둘 다 멈춤)"""
         if self.ros and self.ros.is_connected:
-            # 1. mode를 idle로
             self.send_mode('idle')
-            # 2. /safety_stop true 발행
             topic = roslibpy.Topic(self.ros, '/safety_stop', 'std_msgs/Bool')
             topic.publish(roslibpy.Message({'data': True}))
             topic.unadvertise()
@@ -215,7 +200,6 @@ class RosManager(QObject):
             pass
 
     def item_callback(self, message):
-        """물체 인식 결과 → Flask 결제 서버에 전달"""
         try:
             item_name = message.get('item_name', '')
             in_basket = message.get('in_basket_zone', True)
@@ -275,7 +259,8 @@ class CameraPanel(BasePanel):
     def __init__(self, title, default_text):
         super().__init__(title)
         self.camera_label = QLabel(default_text)
-        self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # PyQt5: Qt.AlignCenter 직접 사용
+        self.camera_label.setAlignment(Qt.AlignCenter)
         self.camera_label.setStyleSheet(
             "background-color: transparent; color: #555555; font-weight: bold; font-size: 11px;")
         self.layout.addWidget(self.camera_label, stretch=1)
@@ -283,9 +268,10 @@ class CameraPanel(BasePanel):
     def render_base_image(self, img_bytes):
         pixmap = QPixmap()
         pixmap.loadFromData(img_bytes)
+        # PyQt5: Qt.KeepAspectRatio, Qt.SmoothTransformation 직접 사용
         return pixmap.scaled(self.camera_label.size(),
-                             Qt.AspectRatioMode.KeepAspectRatio,
-                             Qt.TransformationMode.SmoothTransformation)
+                             Qt.KeepAspectRatio,
+                             Qt.SmoothTransformation)
 
 
 class MainCameraPanel(CameraPanel):
@@ -296,7 +282,8 @@ class MainCameraPanel(CameraPanel):
     def update_view(self, img_bytes):
         scaled_pixmap = self.render_base_image(img_bytes)
         painter = QPainter(scaled_pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # PyQt5: QPainter.Antialiasing 직접 사용
+        painter.setRenderHint(QPainter.Antialiasing)
 
         w, h = scaled_pixmap.width(), scaled_pixmap.height()
         cx, cy = w // 2, h // 2
@@ -321,13 +308,13 @@ class BasketCameraPanel(CameraPanel):
 
 
 # =====================================================================
-# [3] 사이드바 (시스템 + 미션 버튼)
+# [3] 사이드바
 # =====================================================================
 class SidebarPanel(QFrame):
     launch_requested = pyqtSignal()
-    follow_requested = pyqtSignal()         # 사람 추종 시작
-    stop_follow_requested = pyqtSignal()    # 사람 추종 정지
-    waypoint_requested = pyqtSignal(str)    # 웨이포인트 자동 주행 (이름)
+    follow_requested = pyqtSignal()
+    stop_follow_requested = pyqtSignal()
+    waypoint_requested = pyqtSignal(str)
     estop_requested = pyqtSignal()
 
     def __init__(self):
@@ -339,13 +326,11 @@ class SidebarPanel(QFrame):
         outer_layout.setContentsMargins(20, 20, 20, 20)
         outer_layout.setSpacing(15)
 
-        # 타이틀
         title = QLabel("FRICTIONLESS\nCOMMAND")
         title.setStyleSheet(
             "color: #FFFFFF; font-size: 22px; font-weight: 900; letter-spacing: 1px;")
         outer_layout.addWidget(title)
 
-        # 상태 표시
         self.status_label = QLabel("STANDBY")
         self.status_label.setProperty("class", "Status")
         self.status_label.setWordWrap(True)
@@ -353,7 +338,7 @@ class SidebarPanel(QFrame):
 
         outer_layout.addSpacing(10)
 
-        # ── SYSTEM CONTROL ──
+        # SYSTEM CONTROL
         lbl_sys = QLabel("SYSTEM CONTROL")
         lbl_sys.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
         outer_layout.addWidget(lbl_sys)
@@ -365,7 +350,7 @@ class SidebarPanel(QFrame):
 
         outer_layout.addSpacing(5)
 
-        # ── 사람 추종 ──
+        # FOLLOW MODE
         lbl_follow = QLabel("FOLLOW MODE")
         lbl_follow.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
         outer_layout.addWidget(lbl_follow)
@@ -382,12 +367,11 @@ class SidebarPanel(QFrame):
 
         outer_layout.addSpacing(5)
 
-        # ── 자동 주행 (웨이포인트 동적 버튼) ──
+        # AUTO NAVIGATION
         lbl_nav = QLabel("AUTO NAVIGATION")
         lbl_nav.setStyleSheet("color: #666; font-size: 11px; font-weight: bold;")
         outer_layout.addWidget(lbl_nav)
 
-        # 스크롤 영역 (웨이포인트가 많아지면 스크롤)
         self.wp_scroll = QScrollArea()
         self.wp_scroll.setWidgetResizable(True)
         self.wp_scroll.setStyleSheet("background-color: transparent; border: none;")
@@ -398,14 +382,13 @@ class SidebarPanel(QFrame):
         self.wp_scroll.setWidget(self.wp_container)
         outer_layout.addWidget(self.wp_scroll, stretch=1)
 
-        # 안내 라벨 (웨이포인트 없을 때)
         self.empty_label = QLabel("맵에서 좌클릭으로\n웨이포인트를 추가하세요")
         self.empty_label.setStyleSheet(
             "color: #555; font-size: 11px; padding: 10px; text-align: center;")
-        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setAlignment(Qt.AlignCenter)
         self.wp_layout.addWidget(self.empty_label)
 
-        # ── EMERGENCY STOP ──
+        # E-STOP
         btn_estop = QPushButton("EMERGENCY STOP")
         btn_estop.setObjectName("EStopBtn")
         btn_estop.clicked.connect(self.estop_requested.emit)
@@ -416,8 +399,6 @@ class SidebarPanel(QFrame):
         self.status_label.setStyleSheet(f"color: {color};")
 
     def refresh_waypoints(self, waypoint_names):
-        """웨이포인트 목록 변경 시 동적으로 버튼 재생성"""
-        # 기존 버튼들 제거
         while self.wp_layout.count():
             item = self.wp_layout.takeAt(0)
             if item.widget():
@@ -427,11 +408,10 @@ class SidebarPanel(QFrame):
             self.empty_label = QLabel("맵에서 좌클릭으로\n웨이포인트를 추가하세요")
             self.empty_label.setStyleSheet(
                 "color: #555; font-size: 11px; padding: 10px; text-align: center;")
-            self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.empty_label.setAlignment(Qt.AlignCenter)
             self.wp_layout.addWidget(self.empty_label)
             return
 
-        # 웨이포인트별 버튼 동적 생성
         for name in waypoint_names:
             btn = QPushButton(name)
             btn.setProperty("class", "MissionBtn")
@@ -467,7 +447,6 @@ class FrictionlessStoreGUI(QMainWindow):
         self.build_layout()
         self.connect_signals()
 
-        # 초기 웨이포인트 버튼 표시
         self.sidebar_panel.refresh_waypoints(self.map_panel.wp_db.get_all_names())
 
         self.log_panel.append_log("SYSTEM BOOT.")
@@ -501,20 +480,16 @@ class FrictionlessStoreGUI(QMainWindow):
         main_layout.addLayout(vision_layout, stretch=1)
 
     def connect_signals(self):
-        # 맵 패널 → 로그
         self.map_panel.log_event.connect(self.log_panel.append_log)
-        # 웨이포인트 추가/삭제 → 사이드바 버튼 갱신
         self.map_panel.waypoints_changed.connect(
             lambda: self.sidebar_panel.refresh_waypoints(self.map_panel.wp_db.get_all_names()))
 
-        # ROS 신호 → UI
         self.ros_manager.log_signal.connect(self.log_panel.append_log)
         self.ros_manager.pose_signal.connect(self.map_panel.update_pose)
         self.ros_manager.status_signal.connect(self.update_status_ui)
         self.ros_manager.camera1_signal.connect(self.cam1_panel.update_view)
         self.ros_manager.camera2_signal.connect(self.cam2_panel.update_view)
 
-        # 사이드바 버튼
         self.sidebar_panel.launch_requested.connect(self.handle_remote_launch)
         self.sidebar_panel.follow_requested.connect(self.handle_follow_start)
         self.sidebar_panel.stop_follow_requested.connect(self.handle_follow_stop)
@@ -522,7 +497,6 @@ class FrictionlessStoreGUI(QMainWindow):
         self.sidebar_panel.estop_requested.connect(self.handle_estop)
 
     def handle_remote_launch(self):
-        """터틀봇 라즈베리파이에 SSH로 ros2 launch 실행"""
         launch_cmd = (
             f"bash -c 'source /opt/ros/humble/setup.bash && "
             f"source {self.workspace_path}/install/setup.bash && "
@@ -535,7 +509,6 @@ class FrictionlessStoreGUI(QMainWindow):
         self.log_panel.append_log("[INFO] ROS2 노드 부팅에 5~10초 소요됩니다.")
 
     def handle_follow_start(self):
-        """사람 추종 모드 시작"""
         if not self._check_ros_connection():
             return
         self.current_mission = "FOLLOW"
@@ -544,7 +517,6 @@ class FrictionlessStoreGUI(QMainWindow):
         self.update_status_ui()
 
     def handle_follow_stop(self):
-        """사람 추종 정지"""
         if not self._check_ros_connection():
             return
         self.current_mission = "IDLE"
@@ -553,7 +525,6 @@ class FrictionlessStoreGUI(QMainWindow):
         self.update_status_ui()
 
     def handle_waypoint_nav(self, waypoint_name):
-        """웨이포인트로 자동 주행"""
         if not self._check_ros_connection():
             return
 
@@ -578,14 +549,15 @@ class FrictionlessStoreGUI(QMainWindow):
         self.update_status_ui()
 
     def _check_ros_connection(self):
-        """ROS 연결 확인 + 안 됐으면 재연결 시도"""
         if not self.ros_manager.ros or not self.ros_manager.ros.is_connected:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("경고")
             msg_box.setText("먼저 SYSTEM LAUNCH를 눌러 로봇을 가동하거나 통신을 점검하세요.")
-            msg_box.setIcon(QMessageBox.Icon.Warning)
-            msg_box.addButton("확인", QMessageBox.ButtonRole.AcceptRole)
-            msg_box.exec()
+            # PyQt5: QMessageBox.Warning 직접 사용
+            msg_box.setIcon(QMessageBox.Warning)
+            # PyQt5: AcceptRole 직접 사용
+            msg_box.addButton("확인", QMessageBox.AcceptRole)
+            msg_box.exec_()
             self.ros_manager.connect_to_robot()
             return False
         return True
