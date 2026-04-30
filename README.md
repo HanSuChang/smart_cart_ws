@@ -134,7 +134,7 @@ ssh song@192.168.0.222
 
 (사람 추종 캠)
 ros2 run v4l2_camera v4l2_camera_node --ros-args \
-  -p video_device:=/dev/video1 \
+  -p video_device:=/dev/video3 \
   -p image_size:=[640,480] \
   -p pixel_format:=YUYV \
   -r __node:=webcam \
@@ -147,7 +147,7 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
 
 (물체인식 캠)
 ros2 run v4l2_camera v4l2_camera_node --ros-args \
-  -p video_device:=/dev/video4 \
+  -p video_device:=/dev/video0 \
   -p image_size:=[640,480] \
   -p pixel_format:=YUYV \
   -r __node:=webcam2 \
