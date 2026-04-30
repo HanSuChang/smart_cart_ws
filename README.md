@@ -96,6 +96,18 @@ ros2 param set /controller_server general_goal_checker.yaw_goal_tolerance 0.1
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 ===============캠 띄우는 법=======================
 터틀봇 접속 후
 터미널에  rviz2 키기
