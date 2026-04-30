@@ -78,3 +78,69 @@ ros2 param set /controller_server FollowPath.xy_goal_tolerance 0.05
 
 # 도착 후 방향 오차 (0.1 = 약 5.7도)
 ros2 param set /controller_server general_goal_checker.yaw_goal_tolerance 0.1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+===============캠 띄우는 법=======================
+
+
+ssh song@192.168.0.222
+
+
+
+
+
+(사람 추종 캠)
+ros2 run v4l2_camera v4l2_camera_node --ros-args \
+  -p video_device:=/dev/video1 \
+  -p image_size:=[640,480] \
+  -p pixel_format:=YUYV \
+  -r __node:=webcam \
+  -r /image_raw:=/webcam/image_raw \
+  -r /image_raw/compressed:=/webcam/image_raw/compressed
+
+
+
+
+
+(물체인식 캠)
+ros2 run v4l2_camera v4l2_camera_node --ros-args \
+  -p video_device:=/dev/video4 \
+  -p image_size:=[640,480] \
+  -p pixel_format:=YUYV \
+  -r __node:=webcam2 \
+  -r /image_raw:=/webcam2/image_raw \
+  -r /image_raw/compressed:=/webcam2/image_raw/compressed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
