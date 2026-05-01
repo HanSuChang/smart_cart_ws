@@ -12,6 +12,17 @@ import csv
 import os
 from flask import Flask, render_template_string, send_file, jsonify, request
 
+# ROS2 (cart ↔ topic 브릿지)
+try:
+    import rclpy
+    from rclpy.node import Node as RclNode
+    from std_msgs.msg import String as StdString
+    from sc_interfaces.msg import PaymentEvent, ItemDetected
+    _ROS_OK = True
+except Exception:
+    _ROS_OK = False
+    RclNode = object
+
 
 # =========================================================
 # 1. 데이터 관리 클래스 (Database & Cart Manager)
@@ -222,17 +233,91 @@ class TemplateManager:
 
 
 # =========================================================
+# 3.5 ROS Bridge Node — Flask ↔ ROS2 토픽 발행/구독
+# =========================================================
+class CartRosBridgeNode(RclNode):
+    """
+    Flask 결제 서버에서 일어난 이벤트를 ROS 토픽으로 발행.
+    또한 /item_detected, /item_confirm 을 구독해 장바구니에 자동 추가.
+
+    Publish:
+      /payment/event   (sc_interfaces/PaymentEvent)
+      /item_confirm    (std_msgs/String)  — 결제 완료 후 cart 변경 알림 등
+
+    Subscribe:
+      /item_detected   (sc_interfaces/ItemDetected) — 백업: GUI 외 직접 추가
+      /item_confirm    (std_msgs/String)            — 뚜껑 OPEN 확정 시 동기화
+    """
+
+    def __init__(self):
+        if not _ROS_OK:
+            return
+        super().__init__('cart_ros_bridge')
+        self.cart_ref = None  # SmartCartServer.cart (장바구니 매니저)
+
+        self.payment_pub = self.create_publisher(
+            PaymentEvent, '/payment/event', 10)
+        self.item_confirm_pub = self.create_publisher(
+            StdString, '/item_confirm', 10)
+
+        self.item_sub = self.create_subscription(
+            ItemDetected, '/item_detected', self._on_item, 10)
+        self.confirm_sub = self.create_subscription(
+            StdString, '/item_confirm', self._on_confirm, 10)
+
+        self.get_logger().info('CartRosBridgeNode 시작')
+
+    def attach_cart(self, cart):
+        self.cart_ref = cart
+
+    def _on_item(self, msg: 'ItemDetected'):
+        if self.cart_ref and msg.in_basket_zone and msg.item_name:
+            self.cart_ref.add_item(msg.item_name)
+
+    def _on_confirm(self, msg: 'StdString'):
+        # 뚜껑 OPEN 확정 — 추가 로깅용
+        try:
+            self.get_logger().info(f'[item_confirm] {msg.data}')
+        except Exception:
+            pass
+
+    def publish_payment(self, event, total_price=0, item_count=0, message=''):
+        if not _ROS_OK:
+            return
+        try:
+            m = PaymentEvent()
+            m.header.stamp = self.get_clock().now().to_msg()
+            m.header.frame_id = 'flask_cart'
+            m.event = event
+            m.total_price = int(total_price)
+            m.item_count = int(item_count)
+            m.message = message
+            self.payment_pub.publish(m)
+        except Exception as e:
+            try:
+                self.get_logger().error(f'publish_payment 실패: {e}')
+            except Exception:
+                pass
+
+
+# =========================================================
 # 4. Flask 서버 메인 엔진
 # =========================================================
 class SmartCartServer:
-    """Flask 서버 구동 + 모든 API 라우팅"""
+    """Flask 서버 구동 + 모든 API 라우팅 + ROS 토픽 발행"""
 
-    def __init__(self):
+    def __init__(self, ros_bridge=None):
         self.app = Flask(__name__)
         self.cart = CartManager()
         self.utils = SystemUtils()
         self.ui = TemplateManager()
         self.host_ip = self.utils.get_local_ip()
+        self.ros_bridge = ros_bridge
+        if self.ros_bridge is not None:
+            try:
+                self.ros_bridge.attach_cart(self.cart)
+            except Exception:
+                pass
         self._setup_routes()
 
     def _setup_routes(self):
@@ -256,6 +341,16 @@ class SmartCartServer:
             total = sum(i['price'] * i['qty'] for i in self.cart.cart_items)
             res = render_template_string(self.ui.RECEIPT, items=self.cart.cart_items, total=total)
             self.cart.payment_completed = True
+            # ★ ROS 토픽으로 결제 완료 발행
+            if self.ros_bridge is not None:
+                try:
+                    self.ros_bridge.publish_payment(
+                        event='paid',
+                        total_price=total,
+                        item_count=sum(i['qty'] for i in self.cart.cart_items),
+                        message='Flask QR 결제 완료')
+                except Exception as e:
+                    print(f'publish_payment 실패: {e}')
             return res
 
         @self.app.route('/api/status')
@@ -300,5 +395,15 @@ if __name__ == '__main__':
 
 def main():
     """ros2 run sc_gui cart_server 로 단독 실행할 때 호출"""
-    server = SmartCartServer()
+    bridge = None
+    if _ROS_OK:
+        try:
+            rclpy.init()
+            bridge = CartRosBridgeNode()
+            import threading
+            threading.Thread(
+                target=lambda: rclpy.spin(bridge), daemon=True).start()
+        except Exception as e:
+            print(f'rclpy 초기화 실패 (Flask only): {e}')
+    server = SmartCartServer(ros_bridge=bridge)
     server.run()

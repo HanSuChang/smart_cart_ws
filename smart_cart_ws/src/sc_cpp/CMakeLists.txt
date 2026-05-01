@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -18,10 +19,11 @@ find_package(sc_interfaces REQUIRED)
 set(DEPS
   rclcpp
   rclcpp_components
+  rcl_interfaces
   geometry_msgs
   sensor_msgs
   std_msgs
-  
+
   sc_interfaces
 )
 

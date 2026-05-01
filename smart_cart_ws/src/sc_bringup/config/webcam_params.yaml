@@ -1,13 +1,50 @@
+# ================================================================
+# webcam_params.yaml
+# [usb_cam 기반] USB 웹캠 2대 설정
+#
+# 패키지: usb_cam (mjpeg2rgb 픽셀 변환)
+# 실행:   usb_cam_node_exe (ROS2 Humble 기준)
+#
+# 설치:
+#   sudo apt install ros-humble-usb-cam
+#
+# 토픽 (각 노드 이름 webcam, webcam2 기준):
+#   /webcam/image_raw                    sensor_msgs/Image       (RGB)
+#   /webcam/image_raw/compressed         sensor_msgs/CompressedImage  (jpeg)
+#   /webcam2/image_raw
+#   /webcam2/image_raw/compressed
+#
+# 디바이스 확인:
+#   ls /dev/video*
+#   v4l2-ctl --list-devices
+#   v4l2-ctl -d /dev/video0 --list-formats-ext   # MJPEG 지원 확인
+# ================================================================
+
+# 사람 추종 카메라 (전방, USB 1번)
 webcam:
   ros__parameters:
     video_device: "/dev/video1"
-    image_size: [640, 480]
-    pixel_format: "YUYV"
+    image_width:  640
+    image_height: 480
+    framerate:    30.0
+    # ★ MJPEG → RGB 자동 변환 (CPU 부담 ↓, USB 대역폭 ↓)
+    pixel_format: "mjpeg2rgb"
+    av_device_format: "YUV422P"
+    color_format: "yuv422p"
+    camera_name:  "webcam"
     camera_frame_id: "webcam_link"
+    io_method: "mmap"
 
+# 물체 인식 카메라 (바구니 후방 고정, USB 2번)
 webcam2:
   ros__parameters:
     video_device: "/dev/video3"
-    image_size: [640, 480]
-    pixel_format: "YUYV"
+    image_width:  640
+    image_height: 480
+    framerate:    30.0
+    pixel_format: "mjpeg2rgb"
+    av_device_format: "YUV422P"
+    color_format: "yuv422p"
+    camera_name:  "webcam2"
     camera_frame_id: "webcam2_link"
+    io_method: "mmap"

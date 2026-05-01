@@ -1,32 +1,34 @@
 #pragma once
-// ================================================================
+// =====================================================================
 // lid_controller.hpp
-// [C++ 담당] 바구니 뚜껑 서보(MG996R) 제어
 //
-// 동작 시나리오:
-//   1. RPi 카메라가 Roboflow 학습 물체를 인식 → /item_detected publish
-//   2. 이 노드가 수신 → 연속 N프레임 확정 → 뚜껑 열기 신호
-//   3. /servo_control publish (servo_id=2, angle=open_angle)
-//   4. open_duration_sec 후 자동으로 뚜껑 닫기
-//   5. 확정된 물체명을 /item_confirm publish
+// [기능]
+//   1. /item_detected 연속 confirm_frames 이상 감지 → 뚜껑 OPEN
+//      open_duration_sec 후 자동 CLOSE
+//   2. /smart_cart/destination "toilet" 수신 시 즉시 뚜껑 CLOSE
+//      (화장실 이동 시 안전을 위해 뚜껑이 닫혀야 함)
+//      ※ 하드웨어 미연결 — 일단 토픽 발행만 (ServoControl)
+//   3. /payment/event "paid" 수신 시 뚜껑 CLOSE (결제 완료 후 잠금)
 //
-//   ※ 결제 시스템:
-//      현재 계획: 안드로이드 앱에서 상품 QR 스캔 → 결제
-//      ROS2와는 별도 프로젝트. 추후 연동 방식은 변경될 수 있음.
-//      변경 시 이 노드에 결제 확인 subscriber 추가 가능.
+// [Topic — Pub/Sub]
+//   Subscribe:
+//     /item_detected           (sc_interfaces/ItemDetected)
+//     /basket/event            (sc_interfaces/BasketEvent)   바구니 비전 노드
+//     /smart_cart/destination  (std_msgs/String)             GUI 이동 목적지
+//     /payment/event           (sc_interfaces/PaymentEvent)
 //
-// Subscribe: /item_detected (sc_interfaces/msg/ItemDetected)
-// Publish:   /servo_control (sc_interfaces/msg/ServoControl)
-//            /item_confirm (std_msgs/msg/String)
-//
-// 파라미터:
-//   confidence_threshold, confirm_frames
-//   open_angle, close_angle, open_duration_sec
-// ================================================================
-
-// TODO: 나중에 구현 예정
+//   Publish:
+//     /servo_control           (sc_interfaces/ServoControl, servo_id=2)
+//     /item_confirm            (std_msgs/String)             확정된 물체명
+//     /lid_state               (std_msgs/String)             "open" | "closed"
+// =====================================================================
 
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
+#include "sc_interfaces/msg/item_detected.hpp"
+#include "sc_interfaces/msg/servo_control.hpp"
+#include "sc_interfaces/msg/payment_event.hpp"
+#include "sc_interfaces/msg/basket_event.hpp"
 
 namespace sc_cpp
 {
@@ -35,6 +37,44 @@ class LidController : public rclcpp::Node
 {
 public:
   explicit LidController(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+
+private:
+  void item_callback(const sc_interfaces::msg::ItemDetected::SharedPtr msg);
+  void basket_callback(const sc_interfaces::msg::BasketEvent::SharedPtr msg);
+  void destination_callback(const std_msgs::msg::String::SharedPtr msg);
+  void payment_callback(const sc_interfaces::msg::PaymentEvent::SharedPtr msg);
+
+  void open_lid(const std::string & reason);
+  void close_lid(const std::string & reason);
+  void publish_servo(double angle);
+  void publish_lid_state(const std::string & st);
+  void on_close_timer();
+
+  // ── Sub ──
+  rclcpp::Subscription<sc_interfaces::msg::ItemDetected>::SharedPtr item_sub_;
+  rclcpp::Subscription<sc_interfaces::msg::BasketEvent>::SharedPtr basket_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr dest_sub_;
+  rclcpp::Subscription<sc_interfaces::msg::PaymentEvent>::SharedPtr payment_sub_;
+
+  // ── Pub ──
+  rclcpp::Publisher<sc_interfaces::msg::ServoControl>::SharedPtr servo_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr confirm_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr lid_state_pub_;
+
+  rclcpp::TimerBase::SharedPtr close_timer_;
+
+  // ── 파라미터 ──
+  double confidence_threshold_;
+  int    confirm_frames_;
+  double open_angle_;
+  double close_angle_;
+  double open_duration_sec_;
+  double command_speed_;
+
+  // ── 상태 ──
+  std::string last_item_;
+  int  consecutive_count_ = 0;
+  bool lid_open_ = false;
 };
 
 }  // namespace sc_cpp

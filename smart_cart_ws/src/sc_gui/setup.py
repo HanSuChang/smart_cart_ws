@@ -13,19 +13,19 @@ setup(
     ],
     install_requires=[
         'setuptools',
-        # GUI 의존성 (pip install로도 미리 설치 필요)
-        # PyQt6, paramiko, roslibpy, requests, qrcode, flask, pyyaml
+        # 외부 의존성 (pip 미리 설치 필요)
+        # PyQt5, paramiko, roslibpy, requests, qrcode, flask, pyyaml
     ],
     zip_safe=True,
-    maintainer='SmartCart Team (GUI 담당)',
+    maintainer='SmartCart Team (GUI)',
     maintainer_email='team@smartcart.local',
-    description='Smart Cart GUI (PyQt6 + Flask 결제 + Nav2 연동)',
+    description='Smart Cart 관제 GUI (PyQt5 + Flask 결제 + Nav2 + ROS 토픽 통합)',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            # 메인 GUI (관제 + Flask 결제 동시 실행)
+            # 메인 GUI (관제 + Flask 결제 + ROS 브릿지 동시 실행)
             'frictionless_gui = sc_gui.main:main',
-            # Flask 결제 서버만 단독 실행 (테스트용)
+            # Flask 결제 서버 단독 실행 (테스트용)
             'cart_server = sc_gui.cart_gui:main',
         ],
     },

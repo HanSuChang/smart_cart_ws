@@ -1,10 +1,25 @@
 # ================================================================
 # tracker_params.yaml
-# [Python 담당] person_tracker 파라미터
+# [Python 담당] person_tracker (YOLOv8n + BoT-SORT + HSV)
 # ================================================================
 
 person_tracker:
   ros__parameters:
     model_path: "yolov8n.pt"
     conf_threshold: 0.5
-    img_size: 320      
+    img_size: 320
+
+    # ★ 학습 시간 (초) — 15초
+    learning_duration: 15.0
+    # ★ 학습 완료 후 follow 모드 자동 전환 전 대기 시간 (초) — 5초
+    post_learn_delay: 5.0
+
+    # HSV Re-ID 임계값 (1에 가까울수록 동일인물)
+    similarity_threshold: 0.7
+
+    # 시작 시 ~/.smart_cart/master_hist.json 자동 로드
+    auto_load: true
+
+    # ★ GUI 카메라 화면용 YOLO 적용 프레임 발행 여부
+    publish_annotated: true
+    annotated_jpeg_quality: 60

@@ -1,4 +1,5 @@
 <?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>sc_bringup</name>
   <version>0.1.0</version>
@@ -14,8 +15,8 @@
   <exec_depend>sc_python</exec_depend>
   <exec_depend>sc_gui</exec_depend>
 
-  <!-- 외부 의존성 (launch에서 사용) -->
-  <exec_depend>v4l2_camera</exec_depend>
+  <!-- 외부 의존성 -->
+  <exec_depend>usb_cam</exec_depend>
   <exec_depend>rosbridge_server</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_amcl</exec_depend>

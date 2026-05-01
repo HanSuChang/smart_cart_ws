@@ -4,7 +4,6 @@ from glob import glob
 
 package_name = 'sc_python'
 
-
 model_files = glob('sc_python/models/*.pt')
 data_files = [
     ('share/ament_index/resource_index/packages',
@@ -25,13 +24,13 @@ setup(
     zip_safe=True,
     maintainer='Han Su-chang',
     maintainer_email='hsc0724321@gmail.com',
-    description='Smart Cart Python AI 노드 (YOLOv8n + DeepSORT)',
+    description='Smart Cart Python AI 노드 (YOLOv8n + BoT-SORT + HSV + 바구니 OpenCV)',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
             'person_tracker  = sc_python.person_tracker:main',
             'item_classifier = sc_python.item_classifier:main',
-            
+            'basket_vision   = sc_python.basket_vision:main',
         ],
     },
 )

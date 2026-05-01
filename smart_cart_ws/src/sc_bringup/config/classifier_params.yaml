@@ -5,10 +5,11 @@
 
 item_classifier:
   ros__parameters:
-    # Roboflow에서 학습 → YOLOv8n export한 .pt 파일 경로
-    model_path: "best.pt"        # models/ 폴더에 배치
+    # Roboflow / COCO 학습된 YOLOv8n 모델 (yolov8n.pt 또는 best.pt)
+    model_path: "yolov8n.pt"
     confidence: 0.6
     image_topic: "/webcam2/image_raw"
+    img_size: 320
 
     # 바구니 입구 ROI 영역 (화면 비율 0.0~1.0)
     roi_x: 0.1
@@ -19,3 +20,7 @@ item_classifier:
     # 배경 차분 모션 감지 임계값 (픽셀 수)
     motion_threshold: 500
     show_debug: false
+
+    # ★ GUI 카메라(물체 인식 화면)용 YOLO 적용 프레임 발행 여부
+    publish_annotated: true
+    annotated_jpeg_quality: 60

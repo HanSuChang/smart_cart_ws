@@ -7,10 +7,25 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# ── 리소스 설치 (중요) ──
-# 여기서 maps 폴더를 추가해야 맵 토픽을 만들 때 파일을 불러올 수 있습니다.
-install(DIRECTORY config launch maps rviz urdf worlds
+# config / launch / maps / urdf / rviz / worlds 설치
+install(DIRECTORY config launch maps
   DESTINATION share/${PROJECT_NAME}
+  OPTIONAL
 )
+
+# 선택 폴더 (있으면 설치)
+foreach(dir rviz urdf worlds)
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${dir})
+    install(DIRECTORY ${dir} DESTINATION share/${PROJECT_NAME})
+  endif()
+endforeach()
+
+# OpenCR 펌웨어 폴더 설치 (smart_cart_ws/firmware → share)
+# ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware 에서 빌드 시점에 복사
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware)
+  install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../firmware/
+    DESTINATION share/${PROJECT_NAME}/firmware
+  )
+endif()
 
 ament_package()
