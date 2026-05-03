@@ -1,0 +1,61 @@
+# ================================================================
+# follow_params.yaml
+# [C++ 담당] follow_controller 파라미터
+# ros2 param set / rqt_reconfigure 로 실시간 변경 가능
+#
+# ★ 사용자와 80cm 거리 유지 + Kalman 예측 + GUI 모드 연동
+#
+#   거리 80cm 이유:
+#     - TurtleBot3 Waffle Pi 본체 ~30cm
+#     - 사용자 보폭 ~50cm
+#     - 합계 80cm 확보해야 발/뒷걸음에 안 부딪침
+#     - 팬틸트 카메라가 위로 기울여 전신 안정적 캡처 가능
+#
+# 실시간 튜닝 예:
+#   ros2 param set /follow_controller target_distance_m 0.8
+#   ros2 param set /follow_controller bbox_height_at_target 150.0
+#   ros2 param set /follow_controller linear_kp 1.5
+# ================================================================
+
+follow_controller:
+  ros__parameters:
+    # ── PID — Linear (거리 m 단위) ──
+    linear_kp: 1.5
+    linear_ki: 0.0
+    linear_kd: 0.3
+
+    # ── PID — Angular (픽셀 단위 오차 → rad/s) ──
+    angular_kp: 0.004
+    angular_ki: 0.0
+    angular_kd: 0.001
+
+    # ★ 사용자와 유지할 목표 거리 (80cm)
+    target_distance_m: 0.8
+
+    # ★ 사용자가 80cm 거리에 있을 때 bbox 높이 (픽셀, 640x480 기준)
+    #   캘리브레이션 방법 (실제 로봇에서):
+    #     1. 사용자가 정확히 80cm 떨어져서 정면을 바라봄
+    #     2. ros2 topic echo /tracker/state 로 실제 bbox 높이 확인
+    #     3. 그 값으로 ros2 param set 으로 갱신
+    #   초기값 추정: 1.7m 신장 사람이 80cm 앞 + 카메라 +20도 틸트 시 ~150px
+    bbox_height_at_target: 150.0
+
+    # 화면 중심 계산용 (640x480 → 320 = 중앙)
+    image_width: 640
+
+    # 속도 제한 (TurtleBot3 Waffle Pi 최대 0.26 m/s)
+    max_linear_vel: 0.22
+    max_angular_vel: 1.0
+
+    # 사람 bbox 수신 없으면 이 시간 후 정지
+    bbox_timeout_sec: 1.5
+
+    # 제어 루프 주기
+    control_freq_hz: 20.0
+
+    # 최소 안전 거리 (LiDAR 직접 판단)
+    min_safe_dist: 0.25
+
+    # ★ 사각지대/카메라 밖 → Kalman 예측 유지 시간 (초)
+    #    이 시간 초과 시 정지하고 BoT-SORT+HSV 재인식 대기
+    prediction_timeout_sec: 1.5

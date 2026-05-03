@@ -1,0 +1,9 @@
+# ================================================================
+# SaveWaypoints.srv
+# GUI → waypoints.json 영구 저장 요청
+# ================================================================
+
+sc_interfaces/Waypoint[] waypoints
+---
+bool    success
+string  message

@@ -1,0 +1,32 @@
+# ================================================================
+# basket_vision_params.yaml
+# [Python 담당] basket_vision (OpenCV 영상처리 — 바구니 카메라)
+#
+# turtlebot3 후방 바구니에 고정된 USB 웹캠2 → 모션/배경차분 → 삽입 이벤트
+# ================================================================
+
+basket_vision:
+  ros__parameters:
+    image_topic: "/webcam2/image_raw"
+
+    # 바구니 입구 ROI (화면 비율 0.0~1.0)
+    roi_x: 0.1
+    roi_y: 0.1
+    roi_w: 0.8
+    roi_h: 0.8
+
+    # 모션 픽셀 임계값 (이 이상이면 motion=True)
+    motion_threshold: 1500
+
+    # 모션이 settle_time_sec 동안 잠잠해지면 'insert' 이벤트 확정
+    settle_time_sec: 0.5
+
+    # 이벤트 중복 방지 (같은 삽입을 여러 번 발행하지 않음)
+    cooldown_sec: 2.0
+
+    # 스냅샷 자동 저장 (~/.smart_cart/basket_snapshots/)
+    save_snapshot: true
+
+    # GUI 의 바구니 카메라 패널용 어노테이션 프레임 발행
+    publish_annotated: true
+    annotated_jpeg_quality: 60

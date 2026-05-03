@@ -1,0 +1,41 @@
+# ================================================================
+# servo_params.yaml
+# [C++ 담당] pan_tilt_controller + lid_controller 서보 파라미터
+#
+# [하드웨어 구성]
+#   servo_id 0: Pan (좌우) — MG996R + 메탈 브라켓
+#   servo_id 1: Tilt (상하) — MG996R
+#   servo_id 2: 바구니 뚜껑 — MG996R
+#   제어 보드: OpenCR GPIO (PWM)
+#
+# [카메라]
+#   탑싱크 TS-B7WQ30 1440p
+#   v4l2_camera → 640x480 리사이즈 → /webcam/image_raw
+#
+# 실시간 튜닝:
+#   ros2 param set /pan_tilt_controller pan_kp 0.08
+#   ros2 param set /pan_tilt_controller tilt_kp 0.06
+# ================================================================
+
+pan_tilt_controller:
+  ros__parameters:
+    # Pan (좌우 회전)
+    pan_center: 90.0       # 중립 각도 (정면)
+    pan_min: 0.0           # 최소 각도
+    pan_max: 180.0         # 최대 각도
+    pan_kp: 0.1            # 비례 게인 (높이면 빠르게 반응, 너무 높으면 진동)
+
+    # Tilt (상하 회전)
+    tilt_center: 90.0
+    tilt_min: 45.0         # 너무 위로 안 올라가게
+    tilt_max: 135.0        # 너무 아래로 안 내려가게
+    tilt_kp: 0.08
+
+    # ★ 탑싱크 TS-B7WQ30 → v4l2_camera 640x480 리사이즈 후 기준
+    # bbox 중심 계산에 사용 (카메라 원본 1440p 아님)
+    image_width: 640
+    image_height: 480
+
+    # ServoControl.speed (0.0~1.0)
+    command_speed: 1.0
+    
