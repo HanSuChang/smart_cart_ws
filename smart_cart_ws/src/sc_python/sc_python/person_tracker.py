@@ -275,4 +275,19 @@ class PersonTracker(Node):
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
-            self.get_logger().error(f'c
+            self.get_logger().error(f'camera error: {e}')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = PersonTracker()  # 클래스 이름과 동일해야 함
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

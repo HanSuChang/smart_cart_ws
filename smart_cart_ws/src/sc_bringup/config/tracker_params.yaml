@@ -5,21 +5,23 @@
 
 person_tracker:
   ros__parameters:
+    # 모델 및 성능 최적화 (RPi4 환경)
     model_path: "yolov8n.pt"
-    conf_threshold: 0.5
-    img_size: 320
+    device: "cpu"           # RPi4는 CPU 추론 필수
+    conf_threshold: 0.45    # 약간 낮추어 검출율 확보
+    img_size: 320           # FPS 확보를 위한 최적 크기 유지
+    
+    # ★ 추적 알고리즘 설정
+    tracker_type: "botsort" # BoT-SORT 사용 명시
+    
+    # ★ 학습 및 상태 전환 로직
+    learning_duration: 15.0 # 학습 시간 (초)
+    post_learn_delay: 5.0   # 자동 추종 전환 대기 시간 (초)
 
-    # ★ 학습 시간 (초) — 15초
-    learning_duration: 15.0
-    # ★ 학습 완료 후 follow 모드 자동 전환 전 대기 시간 (초) — 5초
-    post_learn_delay: 5.0
-
-    # HSV Re-ID 임계값 (1에 가까울수록 동일인물)
+    # HSV Re-ID (인물 재식별)
     similarity_threshold: 0.7
+    auto_load: true         # master_hist.json 자동 로드
 
-    # 시작 시 ~/.smart_cart/master_hist.json 자동 로드
-    auto_load: true
-
-    # ★ GUI 카메라 화면용 YOLO 적용 프레임 발행 여부
+    # ★ GUI 데이터 전송 최적화 (대역폭 절약)
     publish_annotated: true
-    annotated_jpeg_quality: 60
+    annotated_jpeg_quality: 50 # RPi4 대역폭 고려하여 약간 하향

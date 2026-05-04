@@ -305,15 +305,13 @@ class FrictionlessStoreGUI(QMainWindow):
                  workspace_path='~/smart_cart_ws/smart_cart_ws',
                  flask_url='http://127.0.0.1:5000'):
         super().__init__()
+        # ... (중략: 위젯 설정 부분은 기존과 동일) ...
         self.setWindowTitle("Smart Cart")
         self.resize(1280, 800)
-
         self.flask_url = flask_url
         self.last_cart_status = {}
-
         self.ros = RosManager(robot_ip)
 
-        # ── 위젯 ──
         self.map_panel = InteractiveMapPanel(yaml_path)
         self.cam_follow = CamView("사람 추종 카메라\n/yolo/follow_image/compressed")
         self.cam_basket = CamView("바구니/물체 카메라\n/basket/annotated/compressed\n/yolo/item_image/compressed")
@@ -328,21 +326,18 @@ class FrictionlessStoreGUI(QMainWindow):
         self.lbl_pose = QLabel("위치: -")
         self.lbl_vel = QLabel("속도: 0.00 / 0.00")
 
-        # ── 버튼 ──
         btn_launch     = QPushButton("SYSTEM LAUNCH (rosbridge 재연결)")
         btn_follow     = QPushButton("사람 추종 시작 (15s 학습 + 5s 대기)")
         btn_follow_off = QPushButton("사람 추종 정지")
         btn_save       = QPushButton("학습 저장")
         btn_reset      = QPushButton("학습 초기화")
-
         btn_toilet     = QPushButton("화장실 이동")
         btn_charger    = QPushButton("충전소 이동")
         btn_payment    = QPushButton("결제")
-
         btn_estop      = QPushButton("EMERGENCY STOP")
         btn_estop.setStyleSheet("background-color: #c33; color: white; font-weight: bold;")
 
-        # 클릭 핸들러
+        # [수정] 버튼 핸들러 연결 (함수가 정의되었으므로 주석 해제)
         btn_launch.clicked.connect(self._on_launch)
         btn_follow.clicked.connect(self._on_follow_start)
         btn_follow_off.clicked.connect(self._on_follow_stop)
@@ -350,10 +345,10 @@ class FrictionlessStoreGUI(QMainWindow):
         btn_reset.clicked.connect(self._on_reset)
         btn_toilet.clicked.connect(self._on_toilet)
         btn_charger.clicked.connect(self._on_charger)
-        btn_payment.clicked.connect(self._on_payment)
-        btn_estop.clicked.connect(self._on_estop)
+        btn_payment.clicked.connect(self._on_payment) # 주석 해제
+        btn_estop.clicked.connect(self._on_estop)     # 주석 해제
 
-        # ── 좌측 컨트롤 패널 ──
+        # ... (중략: 레이아웃 설정 부분은 기존과 동일) ...
         ctrl_box = QGroupBox("CONTROL")
         cv = QVBoxLayout(ctrl_box)
         for w in (self.lbl_status, self.lbl_learn, self.lbl_follow,
@@ -372,7 +367,6 @@ class FrictionlessStoreGUI(QMainWindow):
         cv.addStretch()
         cv.addWidget(btn_estop)
 
-        # ── 우측 비전 패널 ──
         vis_box = QGroupBox("VISION")
         gv = QGridLayout(vis_box)
         gv.addWidget(QLabel("MAP"), 0, 0)
@@ -384,12 +378,10 @@ class FrictionlessStoreGUI(QMainWindow):
         gv.setColumnStretch(0, 2)
         gv.setColumnStretch(1, 1)
 
-        # ── 하단 로그 ──
         log_box = QGroupBox("LOG")
         lv = QVBoxLayout(log_box)
         lv.addWidget(self.log)
 
-        # ── 전체 레이아웃 (Splitter 로 사이즈 자유 조절) ──
         top = QSplitter(Qt.Horizontal)
         top.addWidget(ctrl_box)
         top.addWidget(vis_box)
@@ -408,7 +400,6 @@ class FrictionlessStoreGUI(QMainWindow):
         cen_layout.addWidget(outer)
         self.setCentralWidget(central)
 
-        # ── 시그널 연결 ──
         self._wire_signals()
         self._wp_timer = QTimer()
         self._wp_timer.setSingleShot(True)
@@ -417,7 +408,7 @@ class FrictionlessStoreGUI(QMainWindow):
         self._append_log("BOOT")
         self.ros.connect()
 
-    # ─────────────────────────────────────────────────────────
+    # [수정] _wire_signals: 시그널 연결 (함수가 정의되었으므로 주석 해제)
     def _wire_signals(self):
         self.map_panel.log_event.connect(self._append_log)
         self.map_panel.waypoints_changed.connect(self._publish_waypoints)
@@ -441,8 +432,144 @@ class FrictionlessStoreGUI(QMainWindow):
             lambda m: setattr(self, 'last_cart_status', m))
         self.ros.item_confirm_signal.connect(
             lambda n: self._append_log(f"[LID] OPEN — {n}"))
+        
+        # 주석 해제
         self.ros.basket_event_signal.connect(self._on_basket_event)
         self.ros.payment_event_signal.connect(self._on_payment_event)
+        
+        self.ros.connected_signal.connect(
+            lambda ok: self._wp_timer.start(1000) if ok else None)
+
+    # ... (중략: _append_log ~ _on_toilet 메서드는 기존과 동일) ...
+    def _append_log(self, text):
+        ts = QDateTime.currentDateTime().toString("HH:mm:ss")
+        self.log.append(f"[{ts}] {text}")
+        sb = self.log.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _publish_waypoints(self):
+        wps = self.map_panel.wp_db.data
+        self.ros.send_waypoints(wps)
+        self._append_log(f"[WAYPOINT] {len(wps)}개 발행")
+
+    def _on_check(self):
+        if not self.ros.ros or not self.ros.ros.is_connected:
+            QMessageBox.warning(self, '경고', 'ROS 미연결 — SYSTEM LAUNCH 후 재시도')
+            self.ros.connect()
+            return False
+        return True
+
+    def _on_launch(self):
+        self.ros.connect()
+
+    def _on_follow_start(self):
+        if not self._on_check():
+            return
+        self.lbl_status.setText("FOLLOW (학습+대기)")
+        self._append_log("[FOLLOW] 15s 학습 + 5s 대기 시작")
+        self.ros.send_learn('start_with_delay')
+
+    def _on_follow_stop(self):
+        if not self._on_check():
+            return
+        self.ros.send_mode('idle')
+        self.lbl_status.setText("STANDBY")
+        self._append_log("[FOLLOW] 정지")
+
+    def _on_reset(self):
+        if not self._on_check():
+            return
+        if QMessageBox.question(
+                self, '초기화', '학습 데이터를 초기화할까요?',
+                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            self.ros.send_learn('reset')
+
+    def _on_toilet(self):
+        if not self._on_check():
+            return
+        wp = self.map_panel.get_waypoint('toilet')
+        if not wp:
+            QMessageBox.warning(self, '경고', '화장실 노드가 설정되지 않았습니다.')
+            return
+        if QMessageBox.question(
+                self, '화장실 이동', '화장실로 이동하시겠습니까?',
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.ros.send_destination('toilet')
+        self.ros.send_nav_goal(wp['x'], wp['y'])
+        self.lbl_status.setText("NAV: 화장실")
+
+    # [수정] _on_charger: 누락된 로직 완성
+    def _on_charger(self):
+        if not self._on_check():
+            return
+        wp = self.map_panel.get_waypoint('charger')
+        if not wp:
+            QMessageBox.warning(self, '경고', '충전소 노드가 설정되지 않았습니다.')
+            return
+        if QMessageBox.question(
+                self, '충전소 이동', '충전소로 이동하시겠습니까?',
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.ros.send_destination('charger')
+        self.ros.send_nav_goal(wp['x'], wp['y'])
+        self.lbl_status.setText("NAV: 충전소")
+
+    # [추가] 누락되었던 핸들러 함수들
+    def _on_payment(self):
+        self._append_log("[ACTION] 결제 프로세스 시작 (브라우저 오픈)")
+        webbrowser.open(self.flask_url)
+        self.ros.send_payment('start')
+
+    def _on_estop(self):
+        self._append_log("[CRITICAL] 비상 정지(E-STOP) 버튼 클릭")
+        self.ros.send_estop()
+        self.lbl_status.setText("E-STOP!!")
+
+    def _on_basket_event(self, data):
+        self._append_log(f"[EVENT] 바구니: {data.get('message', '이벤트 발생')}")
+
+    def _on_payment_event(self, data):
+        self._append_log(f"[EVENT] 결제: {data.get('event', '상태 변경')}")
+    # ─────────────────────────────────────────────────────────
+    def _wire_signals(self):
+        """ROS 매니저의 시그널과 GUI 슬롯을 연결합니다."""
+        # 맵 패널 및 기본적인 로그 연결
+        self.map_panel.log_event.connect(self._append_log)
+        self.map_panel.waypoints_changed.connect(self._publish_waypoints)
+
+        # 상태 데이터 연결
+        self.ros.log_signal.connect(self._append_log)
+        self.ros.pose_signal.connect(self.map_panel.update_pose)
+        self.ros.pose_signal.connect(
+            lambda x, y: self.lbl_pose.setText(f"위치: ({x:.2f}, {y:.2f})"))
+        self.ros.cmd_vel_signal.connect(
+            lambda lx, az: self.lbl_vel.setText(f"속도: {lx:.2f} / {az:.2f}"))
+
+        # 카메라 스트리밍 연결
+        self.ros.follow_cam_signal.connect(self.cam_follow.update_view)
+        self.ros.item_cam_signal.connect(self.cam_basket.update_view)
+        self.ros.basket_cam_signal.connect(self.cam_basket.update_view)
+
+        # 로봇 상태 정보 연결
+        self.ros.learn_status_signal.connect(
+            lambda s: self.lbl_learn.setText(f"학습 상태: {s}"))
+        self.ros.follow_status_signal.connect(
+            lambda s: self.lbl_follow.setText(f"추종 상태: {s}"))
+        self.ros.lid_state_signal.connect(
+            lambda s: self.lbl_lid.setText(f"뚜껑: {s}"))
+        self.ros.cart_status_signal.connect(
+            lambda m: setattr(self, 'last_cart_status', m))
+        
+        # 이벤트 알림 연결
+        self.ros.item_confirm_signal.connect(
+            lambda n: self._append_log(f"[LID] OPEN — {n}"))
+
+        # ★ 에러 방지를 위해 정의된 함수가 있을 때만 연결하거나, 아래에 정의한 빈 함수에 연결합니다.
+        self.ros.basket_event_signal.connect(self._on_basket_event)
+        self.ros.payment_event_signal.connect(self._on_payment_event)
+
+        # 연결 상태 확인 및 타이머 시작
         self.ros.connected_signal.connect(
             lambda ok: self._wp_timer.start(1000) if ok else None)
 
