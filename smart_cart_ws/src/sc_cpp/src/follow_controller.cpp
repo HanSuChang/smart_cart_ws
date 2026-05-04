@@ -1,4 +1,5 @@
 #include "sc_cpp/follow_controller.hpp"
+#include <rclcpp_components/register_node_macro.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -113,7 +114,7 @@ rcl_interfaces::msg::SetParametersResult FollowController::on_param_change(
 }
 
 // =====================================================================
-// scan_callback — LiDAR 직접 감시
+// scan_callback — LiDAR 직접 감시 (전방 좌우 15도)
 // =====================================================================
 void FollowController::scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
@@ -138,7 +139,7 @@ void FollowController::mode_callback(const std_msgs::msg::String::SharedPtr msg)
 {
   if (msg->data != current_mode_) {
     RCLCPP_INFO(this->get_logger(),
-      "MODE CHANGED: %s → %s", current_mode_.c_str(), msg->data.c_str());
+      "MODE CHANGED: %s -> %s", current_mode_.c_str(), msg->data.c_str());
     current_mode_ = msg->data;
     lin_error_integral_ = 0.0;
     ang_error_integral_ = 0.0;
@@ -171,7 +172,7 @@ void FollowController::bbox_callback(const sc_interfaces::msg::PersonBbox::Share
 // =====================================================================
 void FollowController::control_loop()
 {
-  // 모드 체크
+  // 모드 체크 — follow 일 때만 /cmd_vel 발행 (Nav2 와 충돌 방지)
   if (current_mode_ != "follow") {
     if (follow_state_ != "idle") {
       follow_state_ = "idle";
@@ -209,8 +210,115 @@ void FollowController::control_loop()
 
   if (elapsed > prediction_timeout_sec_) {
     // 카메라 밖 / 사각지대 너무 오래 → 정지하고 RECOVERING 상태
-    // (Python 측 BoT-SORT + HSV가 다시 잡으면 bbox_callback에서 복귀)
+    // (Python 측 BoT-SORT + HSV 가 다시 잡으면 bbox_callback 에서 복귀)
     stop_robot();
     follow_state_ = "recovering";
     publish_follow_status(follow_state_);
-    publish_tracker_state(0.0, elapse
+    publish_tracker_state(0.0, elapsed);
+    return;
+  }
+
+  // ── Kalman 상태 추출 ──
+  auto kstate = kf_.getState();   // [x(좌상단), y(좌상단), w, h, vx, vy, vw, vh]
+  double bbox_cx = kstate[0] + kstate[2] * 0.5;   // 중심 X
+  double bbox_h  = kstate[3];
+  if (bbox_h < 1.0) bbox_h = 1.0;  // div by zero 방지
+
+  // ── 거리 추정 (bbox 높이 기반: 80cm @ 150px 기준 1/h 비례) ──
+  double current_distance = target_distance_m_ * (bbox_height_at_target_ / bbox_h);
+
+  // ── 선속도 PID (거리 오차) ──
+  double lin_error = current_distance - target_distance_m_;   // 양수 = 멀다 → 전진
+  lin_error_integral_ += lin_error;
+  // 적분 와인드업 방지
+  lin_error_integral_ = std::max(-2.0, std::min(2.0, lin_error_integral_));
+  double lin_derivative = lin_error - lin_error_prev_;
+  double linear_vel =
+      linear_kp_ * lin_error
+    + linear_ki_ * lin_error_integral_
+    + linear_kd_ * lin_derivative;
+  lin_error_prev_ = lin_error;
+
+  // 너무 가까우면 후진 안 함 (안전) — 0 으로 클램프
+  if (current_distance < target_distance_m_ * 0.7) {
+    linear_vel = 0.0;
+    lin_error_integral_ = 0.0;
+  }
+  linear_vel = std::max(-max_linear_vel_,
+                        std::min(max_linear_vel_, linear_vel));
+
+  // ── 각속도 PID (이미지 중앙과 bbox_cx 오차) ──
+  double image_center = static_cast<double>(image_width_) / 2.0;
+  double ang_error = image_center - bbox_cx;   // 양수 = 사람이 왼쪽 → 좌회전(+)
+  ang_error_integral_ += ang_error;
+  ang_error_integral_ = std::max(-500.0, std::min(500.0, ang_error_integral_));
+  double ang_derivative = ang_error - ang_error_prev_;
+  double angular_vel =
+      angular_kp_ * ang_error
+    + angular_ki_ * ang_error_integral_
+    + angular_kd_ * ang_derivative;
+  ang_error_prev_ = ang_error;
+
+  angular_vel = std::max(-max_angular_vel_,
+                         std::min(max_angular_vel_, angular_vel));
+
+  // ── /cmd_vel 발행 ──
+  geometry_msgs::msg::Twist cmd;
+  cmd.linear.x  = linear_vel;
+  cmd.angular.z = angular_vel;
+  cmd_vel_pub_->publish(cmd);
+
+  // ── 상태 발행 ──
+  if (follow_state_ != state) {
+    follow_state_ = state;
+    publish_follow_status(follow_state_);
+  }
+  publish_tracker_state(current_distance, elapsed);
+}
+
+// =====================================================================
+// 보조 함수
+// =====================================================================
+void FollowController::stop_robot()
+{
+  geometry_msgs::msg::Twist cmd;   // 0/0
+  cmd_vel_pub_->publish(cmd);
+}
+
+void FollowController::publish_tracker_state(double dist, double time_since)
+{
+  sc_interfaces::msg::TrackerState m;
+  m.header.stamp = this->now();
+  m.header.frame_id = "base_link";
+
+  // 0: idle, 1: following, 2: predicting, 3: lost, 4: recovering
+  uint8_t s = 0;
+  if      (follow_state_ == "following")  s = 1;
+  else if (follow_state_ == "predicting") s = 2;
+  else if (follow_state_ == "lost")       s = 3;
+  else if (follow_state_ == "recovering") s = 4;
+  m.state = s;
+
+  auto kstate = kf_.getState();
+  for (int i = 0; i < 8; ++i) {
+    m.kalman_state[i] = static_cast<float>(kstate[i]);
+  }
+  m.current_distance = static_cast<float>(dist);
+  m.target_distance  = static_cast<float>(target_distance_m_);
+  m.track_id = (last_bbox_) ? last_bbox_->track_id : -1;
+  m.time_since_measurement = static_cast<float>(time_since);
+
+  tracker_state_pub_->publish(m);
+}
+
+void FollowController::publish_follow_status(const std::string & st)
+{
+  std_msgs::msg::String m;
+  m.data = st;
+  follow_status_pub_->publish(m);
+}
+
+}  // namespace sc_cpp
+
+// 컴포넌트 등록 (rclcpp_components_register_node 와 매칭)
+RCLCPP_COMPONENTS_REGISTER_NODE(sc_cpp::FollowController)
